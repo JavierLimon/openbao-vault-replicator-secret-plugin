@@ -10,12 +10,13 @@ import (
 	replicator "github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin"
 )
 
-func GetVersion() string { return "0.1.0" }
-
 func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
 		fmt.Printf("OpenBAO Vault Replicator\n")
-		fmt.Printf("Version: %s\n", GetVersion())
+		fmt.Printf("Version: %s\n", replicator.GetVersion())
+		fmt.Printf("Commit: %s\n", replicator.GetCommit())
+		fmt.Printf("Date: %s\n", replicator.GetDate())
+		fmt.Printf("BuildType: %s\n", replicator.GetBuildType())
 		os.Exit(0)
 	}
 
