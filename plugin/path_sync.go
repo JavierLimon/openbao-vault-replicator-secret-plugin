@@ -514,7 +514,7 @@ func (b *Backend) readSecret(client *api.Client, config *Configuration, org, sec
 		mount = "kv2"
 	}
 
-	path := fmt.Sprintf("%s/data/%s%s%s", mount, config.OrganizationPath, org, secret)
+	path := fmt.Sprintf("%s/data/%s%s/%s", mount, config.OrganizationPath, org, secret)
 	secretData, err := client.Logical().Read(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret %s/%s: %w", org, secret, err)
