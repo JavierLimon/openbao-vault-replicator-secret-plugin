@@ -10,10 +10,8 @@ import (
 func (b *Backend) pathSync() *framework.Path {
 	return &framework.Path{
 		Pattern: "sync/secrets",
-		Operations: map[logical.Operation]framework.OperationHandler{
-			logical.CreateOperation: {
-				Summary: "Trigger secret replication",
-			},
+		Callbacks: map[logical.Operation]framework.OperationFunc{
+			logical.CreateOperation: b.pathSyncSecrets,
 		},
 		Fields: map[string]*framework.FieldSchema{
 			"organizations": {
