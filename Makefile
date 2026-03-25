@@ -6,6 +6,7 @@ VERSION := 1.0.0
 GO := go
 GOFLAGS := -ldflags "-X github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin.version=$(VERSION)"
 BUILD_DIR := ./dist
+GOPATH := $(shell go env GOPATH)
 
 build:
 	@mkdir -p $(BUILD_DIR)
@@ -19,8 +20,8 @@ test-cover:
 	$(GO) tool cover -html=coverage.out -o coverage.html
 
 lint:
-	golangci-lint run
+	$(GOPATH)/bin/golangci-lint run
 
 fmt:
 	$(GO) fmt ./...
-	goimports -w .
+	$(GOPATH)/bin/goimports -w .

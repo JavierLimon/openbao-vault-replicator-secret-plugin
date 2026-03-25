@@ -1,0 +1,1246 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>vault-replicator: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/JavierLimon/openbao-vault-replicator-secret-plugin/cmd/vault-replicator/main.go (0.0%)</option>
+				
+				<option value="file1">github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin/backend.go (0.0%)</option>
+				
+				<option value="file2">github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin/openbao_client.go (0.0%)</option>
+				
+				<option value="file3">github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin/path_config.go (0.0%)</option>
+				
+				<option value="file4">github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin/path_roles.go (0.0%)</option>
+				
+				<option value="file5">github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin/path_sync.go (0.0%)</option>
+				
+				<option value="file6">github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin/vault_client.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        "fmt"
+        "os"
+
+        "github.com/openbao/openbao/api/v2"
+        "github.com/openbao/openbao/sdk/v2/plugin"
+
+        replicator "github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin"
+)
+
+func GetVersion() string <span class="cov0" title="0">{ return "0.1.0" }</span>
+
+func main() <span class="cov0" title="0">{
+        if len(os.Args) &gt; 1 &amp;&amp; (os.Args[1] == "--version" || os.Args[1] == "-v") </span><span class="cov0" title="0">{
+                fmt.Printf("OpenBAO Vault Replicator\n")
+                fmt.Printf("Version: %s\n", GetVersion())
+                os.Exit(0)
+        }</span>
+
+        <span class="cov0" title="0">apiClientMeta := &amp;api.PluginAPIClientMeta{}
+        flags := apiClientMeta.FlagSet()
+        if err := flags.Parse(os.Args[1:]); err != nil </span><span class="cov0" title="0">{
+                fmt.Fprintf(os.Stderr, "Failed to parse flags: %s\n", err)
+                os.Exit(1)
+        }</span>
+
+        <span class="cov0" title="0">tlsConfig := apiClientMeta.GetTLSConfig()
+        tlsProviderFunc := api.VaultPluginTLSProvider(tlsConfig)
+
+        err := plugin.ServeMultiplex(&amp;plugin.ServeOpts{
+                BackendFactoryFunc: replicator.Factory,
+                TLSProviderFunc:    tlsProviderFunc,
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                os.Exit(1)
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package replicator
+
+import (
+        "context"
+        "sync"
+
+        "github.com/hashicorp/go-hclog"
+        "github.com/openbao/openbao/sdk/v2/framework"
+        "github.com/openbao/openbao/sdk/v2/logical"
+)
+
+type Backend struct {
+        storage logical.Storage
+        logger  hclog.Logger
+        *framework.Backend
+        mu sync.RWMutex
+}
+
+func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) <span class="cov0" title="0">{
+        b := &amp;Backend{
+                storage: conf.StorageView,
+                logger:  conf.Logger,
+        }
+
+        b.Backend = &amp;framework.Backend{
+                Help: "Vault Replicator - Secret engine plugin for replicating secrets from Vault to OpenBao",
+                PathsSpecial: &amp;logical.Paths{
+                        Unauthenticated: []string{"health"},
+                },
+                Paths: []*framework.Path{
+                        b.pathConfig(),
+                        b.pathSync(),
+                        b.pathSyncStatus(),
+                        b.pathSyncHistory(),
+                        b.pathSyncHistoryTimestamp(),
+                },
+                BackendType: logical.TypeLogical,
+        }
+
+        if err := b.Setup(ctx, conf); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return b, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package replicator
+
+import (
+        "context"
+        "fmt"
+
+        "github.com/openbao/openbao/api/v2"
+)
+
+func (b *Backend) getOpenBaoClient(token string) *api.Client <span class="cov0" title="0">{
+        config := api.DefaultConfig()
+        client, err := api.NewClient(config)
+        if err != nil </span><span class="cov0" title="0">{
+                b.logger.Error("failed to create OpenBao client", "error", err)
+                return nil
+        }</span>
+        <span class="cov0" title="0">client.SetToken(token)
+        return client</span>
+}
+
+func (b *Backend) writeToLocalKV(org, secretName string, data map[string]interface{}) error <span class="cov0" title="0">{
+        config, err := b.readConfigNoLock()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to read config: %w", err)
+        }</span>
+        <span class="cov0" title="0">if config == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("configuration not found")
+        }</span>
+
+        <span class="cov0" title="0">client := b.getOpenBaoClient(config.DestinationToken)
+        if client == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to create OpenBao client")
+        }</span>
+
+        <span class="cov0" title="0">mount := config.DestinationMount
+        if mount == "" </span><span class="cov0" title="0">{
+                mount = "kv2"
+        }</span>
+
+        <span class="cov0" title="0">path := fmt.Sprintf("%s/data/%s/%s", mount, org, secretName)
+        _, err = client.Logical().Write(path, map[string]interface{}{
+                "data": data,
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to write secret at %s: %w", path, err)
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (b *Backend) readConfigNoLock() (*Configuration, error) <span class="cov0" title="0">{
+        entry, err := b.storage.Get(context.Background(), configStoragePath)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if entry == nil </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">var config Configuration
+        if err := entry.DecodeJSON(&amp;config); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return &amp;config, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package replicator
+
+import (
+        "context"
+
+        "github.com/openbao/openbao/sdk/v2/framework"
+        "github.com/openbao/openbao/sdk/v2/logical"
+)
+
+const (
+        configStoragePath = "config"
+)
+
+type Configuration struct {
+        VaultAddress     string `json:"vault_address"`
+        VaultMount       string `json:"vault_mount"`
+        AppRoleRoleID    string `json:"approle_role_id"`
+        AppRoleSecretID  string `json:"approle_secret_id"`
+        DestinationToken string `json:"destination_token"`
+        DestinationMount string `json:"destination_mount"`
+        OrganizationPath string `json:"organization_path"`
+}
+
+func (b *Backend) pathConfig() *framework.Path <span class="cov0" title="0">{
+        return &amp;framework.Path{
+                Pattern: "config",
+                Operations: map[logical.Operation]framework.OperationHandler{
+                        logical.ReadOperation: &amp;framework.PathOperation{
+                                Summary:     "Read configuration",
+                                Description: "Returns the plugin configuration (token is masked)",
+                                Callback:    b.pathConfigRead,
+                        },
+                        logical.CreateOperation: &amp;framework.PathOperation{
+                                Summary:     "Create/Update configuration",
+                                Description: "Creates or updates the plugin configuration",
+                                Callback:    b.pathConfigWrite,
+                        },
+                        logical.UpdateOperation: &amp;framework.PathOperation{
+                                Summary:     "Update configuration",
+                                Description: "Updates the plugin configuration",
+                                Callback:    b.pathConfigWrite,
+                        },
+                        logical.DeleteOperation: &amp;framework.PathOperation{
+                                Summary:     "Delete configuration",
+                                Description: "Deletes the plugin configuration",
+                                Callback:    b.pathConfigDelete,
+                        },
+                },
+                Fields: map[string]*framework.FieldSchema{
+                        "vault_address": {
+                                Type:        framework.TypeString,
+                                Description: "Vault server URL (e.g., https://vault.example.com:8200)",
+                        },
+                        "vault_mount": {
+                                Type:        framework.TypeString,
+                                Description: "Vault KVv2 mount path (default: kv2)",
+                        },
+                        "approle_role_id": {
+                                Type:        framework.TypeString,
+                                Description: "AppRole role_id",
+                        },
+                        "approle_secret_id": {
+                                Type:        framework.TypeString,
+                                Description: "AppRole secret_id",
+                        },
+                        "destination_token": {
+                                Type:        framework.TypeString,
+                                Description: "OpenBao token to write secrets",
+                        },
+                        "destination_mount": {
+                                Type:        framework.TypeString,
+                                Description: "OpenBao KVv2 mount (default: kv2)",
+                        },
+                        "organization_path": {
+                                Type:        framework.TypeString,
+                                Description: "Path in Vault where orgs live (e.g., data/)",
+                        },
+                },
+                HelpSynopsis:    "Configuration endpoint for Vault Replicator plugin",
+                HelpDescription: "Configure the connection to Vault and OpenBao for secret replication",
+        }
+}</span>
+
+func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        config, err := b.readConfig(ctx, req.Storage)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if config == nil </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">config.AppRoleSecretID = ""
+        config.DestinationToken = "[MASKED]"
+
+        return &amp;logical.Response{
+                Data: map[string]interface{}{
+                        "vault_address":     config.VaultAddress,
+                        "vault_mount":       config.VaultMount,
+                        "approle_role_id":   config.AppRoleRoleID,
+                        "approle_secret_id": config.AppRoleSecretID,
+                        "destination_token": config.DestinationToken,
+                        "destination_mount": config.DestinationMount,
+                        "organization_path": config.OrganizationPath,
+                },
+        }, nil</span>
+}
+
+func (b *Backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        vaultAddress, ok := data.Get("vault_address").(string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("vault_address must be a string"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">vaultMount, ok := data.Get("vault_mount").(string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("vault_mount must be a string"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">approleRoleID, ok := data.Get("approle_role_id").(string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("approle_role_id must be a string"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">approleSecretID, ok := data.Get("approle_secret_id").(string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("approle_secret_id must be a string"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">destinationToken, ok := data.Get("destination_token").(string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("destination_token must be a string"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">destinationMount, ok := data.Get("destination_mount").(string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("destination_mount must be a string"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">organizationPath, ok := data.Get("organization_path").(string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("organization_path must be a string"), logical.ErrInvalidRequest
+        }</span>
+
+        <span class="cov0" title="0">config := &amp;Configuration{
+                VaultAddress:     vaultAddress,
+                VaultMount:       vaultMount,
+                AppRoleRoleID:    approleRoleID,
+                AppRoleSecretID:  approleSecretID,
+                DestinationToken: destinationToken,
+                DestinationMount: destinationMount,
+                OrganizationPath: organizationPath,
+        }
+
+        entry, err := logical.StorageEntryJSON(configStoragePath, config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">if err := req.Storage.Put(ctx, entry); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return nil, nil</span>
+}
+
+func (b *Backend) pathConfigDelete(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        if err := req.Storage.Delete(ctx, configStoragePath); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">return nil, nil</span>
+}
+
+func (b *Backend) readConfig(ctx context.Context, storage logical.Storage) (*Configuration, error) <span class="cov0" title="0">{
+        entry, err := storage.Get(ctx, configStoragePath)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if entry == nil </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">var config Configuration
+        if err := entry.DecodeJSON(&amp;config); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return &amp;config, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package replicator
+
+import (
+        "context"
+
+        "github.com/openbao/openbao/sdk/v2/framework"
+        "github.com/openbao/openbao/sdk/v2/logical"
+)
+
+func (b *Backend) pathRoles() *framework.Path <span class="cov0" title="0">{
+        return &amp;framework.Path{
+                Pattern: "roles",
+                Callbacks: map[logical.Operation]framework.OperationFunc{
+                        logical.ReadOperation: b.pathRolesRead,
+                        logical.ListOperation: b.pathRolesList,
+                },
+                HelpSynopsis:    "Roles endpoint for Vault Replicator plugin",
+                HelpDescription: "Manage roles for secret replication",
+        }
+}</span>
+
+func (b *Backend) pathRolesRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        return nil, logical.ErrUnsupportedOperation
+}</span>
+
+func (b *Backend) pathRolesList(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        return nil, logical.ErrUnsupportedOperation
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package replicator
+
+import (
+        "context"
+        "fmt"
+        "time"
+
+        "github.com/hashicorp/vault/api"
+        "github.com/openbao/openbao/sdk/v2/framework"
+        "github.com/openbao/openbao/sdk/v2/logical"
+)
+
+const (
+        syncStatusPath     = "sync/status"
+        syncHistoryPrefix  = "sync/history/"
+        syncHistoryListKey = "sync/history"
+)
+
+type SyncStatus struct {
+        LastSync            time.Time `json:"last_sync"`
+        CompletedAt         time.Time `json:"completed_at,omitempty"`
+        StartedAt           time.Time `json:"started_at,omitempty"`
+        Status              string    `json:"status"`
+        LastError           string    `json:"last_error,omitempty"`
+        LastOrg             string    `json:"last_org"`
+        TotalSecrets        int       `json:"total_secrets"`
+        SyncedSecrets       int       `json:"synced_secrets"`
+        SyncedOrgs          int       `json:"synced_organizations"`
+        TotalOrgs           int       `json:"total_organizations"`
+        Failed              int       `json:"failed"`
+        OrganizationsSynced int       `json:"organizations_synced,omitempty"`
+        SecretsSynced       int       `json:"secrets_synced,omitempty"`
+        DurationSeconds     int       `json:"duration_seconds,omitempty"`
+}
+
+type SyncHistoryEntry struct {
+        Timestamp           time.Time `json:"timestamp"`
+        Status              string    `json:"status"`
+        OrganizationsSynced int       `json:"organizations_synced"`
+        SecretsSynced       int       `json:"secrets_synced"`
+        Failed              int       `json:"failed"`
+        DurationSeconds     int       `json:"duration_seconds"`
+}
+
+func (b *Backend) pathSync() *framework.Path <span class="cov0" title="0">{
+        return &amp;framework.Path{
+                Pattern: "sync/secrets",
+                Operations: map[logical.Operation]framework.OperationHandler{
+                        logical.CreateOperation: &amp;framework.PathOperation{
+                                Summary:     "Trigger secret replication",
+                                Description: "Triggers the replication of secrets from HashiCorp Vault to OpenBao",
+                                Callback:    b.pathSyncSecrets,
+                        },
+                },
+                Fields: map[string]*framework.FieldSchema{
+                        "organizations": {
+                                Type:        framework.TypeStringSlice,
+                                Description: "Specific organizations to sync (optional)",
+                        },
+                        "dry_run": {
+                                Type:        framework.TypeBool,
+                                Description: "Preview only, do not write",
+                        },
+                },
+                HelpSynopsis:    "Trigger secret replication from Vault to OpenBao",
+                HelpDescription: "Triggers the replication of secrets from HashiCorp Vault to OpenBao",
+        }
+}</span>
+
+func (b *Backend) pathSyncStatus() *framework.Path <span class="cov0" title="0">{
+        return &amp;framework.Path{
+                Pattern: "sync/status",
+                Operations: map[logical.Operation]framework.OperationHandler{
+                        logical.ReadOperation: &amp;framework.PathOperation{
+                                Summary:     "Get current sync status",
+                                Description: "Returns the current status of the secret replication process",
+                                Callback:    b.pathSyncStatusRead,
+                        },
+                },
+                HelpSynopsis:    "Get the current sync status",
+                HelpDescription: "Returns the current status of the secret replication process",
+        }
+}</span>
+
+func (b *Backend) pathSyncHistory() *framework.Path <span class="cov0" title="0">{
+        return &amp;framework.Path{
+                Pattern: "sync/history",
+                Operations: map[logical.Operation]framework.OperationHandler{
+                        logical.ListOperation: &amp;framework.PathOperation{
+                                Summary:     "List sync history",
+                                Description: "Lists past sync operations",
+                                Callback:    b.pathSyncHistoryList,
+                        },
+                        logical.ReadOperation: &amp;framework.PathOperation{
+                                Summary:     "Get sync history entry",
+                                Description: "Retrieves a specific sync history entry",
+                                Callback:    b.pathSyncHistoryRead,
+                        },
+                },
+                HelpSynopsis:    "List or get sync history",
+                HelpDescription: "Lists past sync operations or retrieves a specific sync history entry",
+        }
+}</span>
+
+func (b *Backend) pathSyncHistoryTimestamp() *framework.Path <span class="cov0" title="0">{
+        return &amp;framework.Path{
+                Pattern: "sync/history/" + framework.GenericNameRegex("timestamp"),
+                Operations: map[logical.Operation]framework.OperationHandler{
+                        logical.ReadOperation: &amp;framework.PathOperation{
+                                Summary:     "Get sync history entry by timestamp",
+                                Description: "Retrieves a specific sync history entry by its timestamp",
+                                Callback:    b.pathSyncHistoryTimestampRead,
+                        },
+                },
+                Fields: map[string]*framework.FieldSchema{
+                        "timestamp": {
+                                Type:        framework.TypeString,
+                                Description: "The timestamp of the sync history entry",
+                        },
+                },
+                HelpSynopsis:    "Get sync history entry by timestamp",
+                HelpDescription: "Retrieves a specific sync history entry by its timestamp",
+        }
+}</span>
+
+func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        b.mu.Lock()
+        defer b.mu.Unlock()
+
+        config, err := b.readConfig(ctx, req.Storage)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if config == nil </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("configuration not found"), logical.ErrInvalidRequest
+        }</span>
+
+        <span class="cov0" title="0">orgsRaw, ok := data.Get("organizations").([]string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("organizations must be a string slice"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">orgs := orgsRaw
+        dryRunRaw, ok := data.Get("dry_run").(bool)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("dry_run must be a boolean"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">dryRun := dryRunRaw
+
+        vaultClient, err := b.createVaultClient(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("failed to create Vault client: " + err.Error()), logical.ErrInvalidRequest
+        }</span>
+
+        <span class="cov0" title="0">clientToken, err := b.loginToVault(vaultClient, config)
+        if err != nil </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("failed to login to Vault: " + err.Error()), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+                if clientToken != "" </span><span class="cov0" title="0">{
+                        if revokeErr := vaultClient.Auth().Token().RevokeSelf(clientToken); revokeErr != nil </span><span class="cov0" title="0">{
+                                b.logger.Warn("failed to revoke token", "error", revokeErr)
+                        }</span>
+                }
+        }()
+
+        <span class="cov0" title="0">vaultClient.SetToken(clientToken)
+
+        status := &amp;SyncStatus{
+                Status:    "running",
+                StartedAt: time.Now().UTC(),
+        }
+
+        if err = b.saveSyncStatus(ctx, req.Storage, status); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">var allOrgs []string
+        if len(orgs) &gt; 0 </span><span class="cov0" title="0">{
+                allOrgs = orgs
+        }</span> else<span class="cov0" title="0"> {
+                allOrgs, err = b.listOrganizations(vaultClient, config)
+                if err != nil </span><span class="cov0" title="0">{
+                        status.Status = "failed"
+                        status.LastError = err.Error()
+                        if saveErr := b.saveSyncStatus(ctx, req.Storage, status); saveErr != nil </span><span class="cov0" title="0">{
+                                b.logger.Error("failed to save sync status", "error", saveErr)
+                        }</span>
+                        <span class="cov0" title="0">return logical.ErrorResponse("failed to list organizations: " + err.Error()), logical.ErrInvalidRequest</span>
+                }
+        }
+
+        <span class="cov0" title="0">status.TotalOrgs = len(allOrgs)
+        status.LastOrg = ""
+
+        for _, org := range allOrgs </span><span class="cov0" title="0">{
+                status.LastOrg = org
+
+                secrets, err := b.listSecretsInOrg(vaultClient, config, org)
+                if err != nil </span><span class="cov0" title="0">{
+                        status.Failed++
+                        continue</span>
+                }
+
+                <span class="cov0" title="0">status.TotalSecrets += len(secrets)
+
+                for _, secret := range secrets </span><span class="cov0" title="0">{
+                        secretData, err := b.readSecret(vaultClient, config, org, secret)
+                        if err != nil </span><span class="cov0" title="0">{
+                                status.Failed++
+                                continue</span>
+                        }
+
+                        <span class="cov0" title="0">if !dryRun </span><span class="cov0" title="0">{
+                                if err := b.writeToLocalKV(org, secret, secretData); err != nil </span><span class="cov0" title="0">{
+                                        status.Failed++
+                                        status.LastError = fmt.Sprintf("failed to write %s/%s: %v", org, secret, err)
+                                        continue</span>
+                                }
+                        }
+
+                        <span class="cov0" title="0">status.SyncedSecrets++</span>
+                }
+
+                <span class="cov0" title="0">status.SyncedOrgs++
+                if err := b.saveSyncStatus(ctx, req.Storage, status); err != nil </span><span class="cov0" title="0">{
+                        b.logger.Error("failed to save sync status", "error", err)
+                }</span>
+        }
+
+        <span class="cov0" title="0">status.Status = "completed"
+        status.CompletedAt = time.Now().UTC()
+        status.OrganizationsSynced = status.SyncedOrgs
+        status.SecretsSynced = status.SyncedSecrets
+        status.DurationSeconds = int(status.CompletedAt.Sub(status.StartedAt).Seconds())
+
+        if err := b.saveSyncStatus(ctx, req.Storage, status); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">if err := b.saveSyncHistory(ctx, req.Storage, status); err != nil </span><span class="cov0" title="0">{
+                b.logger.Error("failed to save sync history", "error", err)
+        }</span>
+
+        <span class="cov0" title="0">return &amp;logical.Response{
+                Data: map[string]interface{}{
+                        "started_at":           status.StartedAt.Format(time.RFC3339),
+                        "status":               status.Status,
+                        "organizations_synced": status.OrganizationsSynced,
+                        "secrets_synced":       status.SecretsSynced,
+                        "failed":               status.Failed,
+                        "completed_at":         status.CompletedAt.Format(time.RFC3339),
+                        "duration_seconds":     status.DurationSeconds,
+                },
+        }, nil</span>
+}
+
+func (b *Backend) pathSyncStatusRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        status, err := b.readSyncStatus(ctx, req.Storage)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if status == nil </span><span class="cov0" title="0">{
+                return &amp;logical.Response{
+                        Data: map[string]interface{}{
+                                "last_sync":            nil,
+                                "last_org":             nil,
+                                "total_organizations":  0,
+                                "synced_organizations": 0,
+                                "total_secrets":        0,
+                                "synced_secrets":       0,
+                                "status":               "idle",
+                                "last_error":           nil,
+                        },
+                }, nil
+        }</span>
+
+        <span class="cov0" title="0">lastSync := ""
+        if !status.LastSync.IsZero() </span><span class="cov0" title="0">{
+                lastSync = status.LastSync.Format(time.RFC3339)
+        }</span>
+
+        <span class="cov0" title="0">return &amp;logical.Response{
+                Data: map[string]interface{}{
+                        "last_sync":            lastSync,
+                        "last_org":             status.LastOrg,
+                        "total_organizations":  status.TotalOrgs,
+                        "synced_organizations": status.SyncedOrgs,
+                        "total_secrets":        status.TotalSecrets,
+                        "synced_secrets":       status.SyncedSecrets,
+                        "status":               status.Status,
+                        "last_error":           status.LastError,
+                },
+        }, nil</span>
+}
+
+func (b *Backend) pathSyncHistoryList(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        entry, err := req.Storage.Get(ctx, syncHistoryListKey)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if entry == nil </span><span class="cov0" title="0">{
+                return &amp;logical.Response{
+                        Data: map[string]interface{}{
+                                "keys": []string{},
+                        },
+                }, nil
+        }</span>
+
+        <span class="cov0" title="0">var keys []string
+        if err := entry.DecodeJSON(&amp;keys); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return &amp;logical.Response{
+                Data: map[string]interface{}{
+                        "keys": keys,
+                },
+        }, nil</span>
+}
+
+func (b *Backend) pathSyncHistoryRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        entry, err := req.Storage.Get(ctx, syncHistoryListKey)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if entry == nil </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("sync history entry not found"), logical.ErrInvalidRequest
+        }</span>
+
+        <span class="cov0" title="0">var keys []string
+        if err = entry.DecodeJSON(&amp;keys); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">if len(keys) == 0 </span><span class="cov0" title="0">{
+                return &amp;logical.Response{
+                        Data: map[string]interface{}{
+                                "keys": []string{},
+                        },
+                }, nil
+        }</span>
+
+        <span class="cov0" title="0">latestTimestamp := keys[len(keys)-1]
+        path := syncHistoryPrefix + latestTimestamp
+        historyEntry, err := req.Storage.Get(ctx, path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if historyEntry == nil </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("sync history entry not found"), logical.ErrInvalidRequest
+        }</span>
+
+        <span class="cov0" title="0">var history SyncHistoryEntry
+        if err := historyEntry.DecodeJSON(&amp;history); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return &amp;logical.Response{
+                Data: map[string]interface{}{
+                        "timestamp":            history.Timestamp.Format(time.RFC3339),
+                        "status":               history.Status,
+                        "organizations_synced": history.OrganizationsSynced,
+                        "secrets_synced":       history.SecretsSynced,
+                        "failed":               history.Failed,
+                        "duration_seconds":     history.DurationSeconds,
+                },
+        }, nil</span>
+}
+
+func (b *Backend) pathSyncHistoryTimestampRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) <span class="cov0" title="0">{
+        timestampRaw, ok := data.Get("timestamp").(string)
+        if !ok </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("timestamp must be a string"), logical.ErrInvalidRequest
+        }</span>
+        <span class="cov0" title="0">timestamp := timestampRaw
+        if timestamp == "" </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("timestamp is required"), logical.ErrInvalidRequest
+        }</span>
+
+        <span class="cov0" title="0">path := syncHistoryPrefix + timestamp
+        entry, err := req.Storage.Get(ctx, path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if entry == nil </span><span class="cov0" title="0">{
+                return logical.ErrorResponse("sync history entry not found"), logical.ErrInvalidRequest
+        }</span>
+
+        <span class="cov0" title="0">var history SyncHistoryEntry
+        if err := entry.DecodeJSON(&amp;history); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return &amp;logical.Response{
+                Data: map[string]interface{}{
+                        "timestamp":            history.Timestamp.Format(time.RFC3339),
+                        "status":               history.Status,
+                        "organizations_synced": history.OrganizationsSynced,
+                        "secrets_synced":       history.SecretsSynced,
+                        "failed":               history.Failed,
+                        "duration_seconds":     history.DurationSeconds,
+                },
+        }, nil</span>
+}
+
+func (b *Backend) createVaultClient(config *Configuration) (*api.Client, error) <span class="cov0" title="0">{
+        vaultConfig := api.DefaultConfig()
+        vaultConfig.Address = config.VaultAddress
+
+        client, err := api.NewClient(vaultConfig)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to create Vault client: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">return client, nil</span>
+}
+
+func (b *Backend) loginToVault(client *api.Client, config *Configuration) (string, error) <span class="cov0" title="0">{
+        loginData := map[string]interface{}{
+                "role_id":   config.AppRoleRoleID,
+                "secret_id": config.AppRoleSecretID,
+        }
+
+        secret, err := client.Logical().Write("auth/approle/login", loginData)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("AppRole login failed: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">if secret == nil || secret.Data == nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("invalid response from AppRole login")
+        }</span>
+
+        <span class="cov0" title="0">clientToken, ok := secret.Data["client_token"].(string)
+        if !ok || clientToken == "" </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("client_token not found in login response")
+        }</span>
+
+        <span class="cov0" title="0">return clientToken, nil</span>
+}
+
+func (b *Backend) listOrganizations(client *api.Client, config *Configuration) ([]string, error) <span class="cov0" title="0">{
+        mount := config.VaultMount
+        if mount == "" </span><span class="cov0" title="0">{
+                mount = "kv2"
+        }</span>
+
+        <span class="cov0" title="0">path := fmt.Sprintf("%s/metadata/%s", mount, config.OrganizationPath)
+        secret, err := client.Logical().List(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to list organizations at %s: %w", path, err)
+        }</span>
+        <span class="cov0" title="0">if secret == nil </span><span class="cov0" title="0">{
+                return []string{}, nil
+        }</span>
+
+        <span class="cov0" title="0">keysRaw, ok := secret.Data["keys"]
+        if !ok </span><span class="cov0" title="0">{
+                return []string{}, nil
+        }</span>
+
+        <span class="cov0" title="0">keys, ok := keysRaw.([]interface{})
+        if !ok </span><span class="cov0" title="0">{
+                return []string{}, nil
+        }</span>
+
+        <span class="cov0" title="0">var orgs []string
+        for _, k := range keys </span><span class="cov0" title="0">{
+                if keyStr, ok := k.(string); ok </span><span class="cov0" title="0">{
+                        orgs = append(orgs, keyStr)
+                }</span>
+        }
+
+        <span class="cov0" title="0">return orgs, nil</span>
+}
+
+func (b *Backend) listSecretsInOrg(client *api.Client, config *Configuration, org string) ([]string, error) <span class="cov0" title="0">{
+        mount := config.VaultMount
+        if mount == "" </span><span class="cov0" title="0">{
+                mount = "kv2"
+        }</span>
+
+        <span class="cov0" title="0">path := fmt.Sprintf("%s/metadata/%s%s", mount, config.OrganizationPath, org)
+        secret, err := client.Logical().List(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to list secrets in org %s: %w", org, err)
+        }</span>
+        <span class="cov0" title="0">if secret == nil </span><span class="cov0" title="0">{
+                return []string{}, nil
+        }</span>
+
+        <span class="cov0" title="0">keysRaw, ok := secret.Data["keys"]
+        if !ok </span><span class="cov0" title="0">{
+                return []string{}, nil
+        }</span>
+
+        <span class="cov0" title="0">keys, ok := keysRaw.([]interface{})
+        if !ok </span><span class="cov0" title="0">{
+                return []string{}, nil
+        }</span>
+
+        <span class="cov0" title="0">var secrets []string
+        for _, k := range keys </span><span class="cov0" title="0">{
+                if keyStr, ok := k.(string); ok </span><span class="cov0" title="0">{
+                        secrets = append(secrets, keyStr)
+                }</span>
+        }
+
+        <span class="cov0" title="0">return secrets, nil</span>
+}
+
+func (b *Backend) readSecret(client *api.Client, config *Configuration, org, secret string) (map[string]interface{}, error) <span class="cov0" title="0">{
+        mount := config.VaultMount
+        if mount == "" </span><span class="cov0" title="0">{
+                mount = "kv2"
+        }</span>
+
+        <span class="cov0" title="0">path := fmt.Sprintf("%s/data/%s%s%s", mount, config.OrganizationPath, org, secret)
+        secretData, err := client.Logical().Read(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to read secret %s/%s: %w", org, secret, err)
+        }</span>
+        <span class="cov0" title="0">if secretData == nil || secretData.Data == nil </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">dataRaw, ok := secretData.Data["data"]
+        if !ok </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">data, ok := dataRaw.(map[string]interface{})
+        if !ok </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">return data, nil</span>
+}
+
+func (b *Backend) saveSyncStatus(ctx context.Context, storage logical.Storage, status *SyncStatus) error <span class="cov0" title="0">{
+        status.LastSync = time.Now().UTC()
+
+        entry, err := logical.StorageEntryJSON(syncStatusPath, status)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return storage.Put(ctx, entry)</span>
+}
+
+func (b *Backend) readSyncStatus(ctx context.Context, storage logical.Storage) (*SyncStatus, error) <span class="cov0" title="0">{
+        entry, err := storage.Get(ctx, syncStatusPath)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">if entry == nil </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">var status SyncStatus
+        if err := entry.DecodeJSON(&amp;status); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return &amp;status, nil</span>
+}
+
+func (b *Backend) saveSyncHistory(ctx context.Context, storage logical.Storage, status *SyncStatus) error <span class="cov0" title="0">{
+        entry := SyncHistoryEntry{
+                Timestamp:           status.CompletedAt,
+                Status:              status.Status,
+                OrganizationsSynced: status.OrganizationsSynced,
+                SecretsSynced:       status.SecretsSynced,
+                Failed:              status.Failed,
+                DurationSeconds:     status.DurationSeconds,
+        }
+
+        key := status.CompletedAt.Format(time.RFC3339)
+        historyEntry, err := logical.StorageEntryJSON(syncHistoryPrefix+key, entry)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if err = storage.Put(ctx, historyEntry); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">keysEntry, err := storage.Get(ctx, syncHistoryListKey)
+        var keys []string
+        if err == nil &amp;&amp; keysEntry != nil </span><span class="cov0" title="0">{
+                if decodeErr := keysEntry.DecodeJSON(&amp;keys); decodeErr != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("failed to decode keys: %w", decodeErr)
+                }</span>
+        }
+
+        <span class="cov0" title="0">keys = append(keys, key)
+
+        newKeysEntry, err := logical.StorageEntryJSON(syncHistoryListKey, keys)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return storage.Put(ctx, newKeysEntry)</span>
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package replicator
+
+import (
+        "fmt"
+
+        "github.com/hashicorp/vault/api"
+)
+
+type VaultClient struct {
+        client   *api.Client
+        address  string
+        mount    string
+        roleID   string
+        secretID string
+        token    string
+}
+
+func NewVaultClient(addr, mount, roleID, secretID string) (*VaultClient, error) <span class="cov0" title="0">{
+        config := api.DefaultConfig()
+        config.Address = addr
+
+        client, err := api.NewClient(config)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to create vault client: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">return &amp;VaultClient{
+                address:  addr,
+                mount:    mount,
+                roleID:   roleID,
+                secretID: secretID,
+                client:   client,
+        }, nil</span>
+}
+
+func (c *VaultClient) Login() error <span class="cov0" title="0">{
+        resp, err := c.client.Logical().Write("auth/approle/login", map[string]interface{}{
+                "role_id":   c.roleID,
+                "secret_id": c.secretID,
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("approle login failed: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">if resp == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("approle login returned nil response")
+        }</span>
+
+        <span class="cov0" title="0">tokenRaw, ok := resp.Data["token"]
+        if !ok </span><span class="cov0" title="0">{
+                return fmt.Errorf("token not found in approle login response")
+        }</span>
+
+        <span class="cov0" title="0">token, ok := tokenRaw.(string)
+        if !ok </span><span class="cov0" title="0">{
+                return fmt.Errorf("token is not a string")
+        }</span>
+
+        <span class="cov0" title="0">c.token = token
+        c.client.SetToken(c.token)
+        return nil</span>
+}
+
+func (c *VaultClient) ListOrganizations() ([]string, error) <span class="cov0" title="0">{
+        path := fmt.Sprintf("%s/metadata/", c.mount)
+        resp, err := c.client.Logical().List(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to list organizations: %w", err)
+        }</span>
+        <span class="cov0" title="0">if resp == nil </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">keysRaw, ok := resp.Data["keys"]
+        if !ok </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">keys, ok := keysRaw.([]interface{})
+        if !ok </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("keys is not a []interface{}")
+        }</span>
+
+        <span class="cov0" title="0">result := make([]string, 0, len(keys))
+        for _, k := range keys </span><span class="cov0" title="0">{
+                if s, ok := k.(string); ok </span><span class="cov0" title="0">{
+                        result = append(result, s)
+                }</span>
+        }
+        <span class="cov0" title="0">return result, nil</span>
+}
+
+func (c *VaultClient) ListSecretsInOrganization(org string) ([]string, error) <span class="cov0" title="0">{
+        path := fmt.Sprintf("%s/metadata/%s", c.mount, org)
+        resp, err := c.client.Logical().List(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to list secrets in organization %s: %w", org, err)
+        }</span>
+        <span class="cov0" title="0">if resp == nil </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">keysRaw, ok := resp.Data["keys"]
+        if !ok </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">keys, ok := keysRaw.([]interface{})
+        if !ok </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("keys is not a []interface{}")
+        }</span>
+
+        <span class="cov0" title="0">result := make([]string, 0, len(keys))
+        for _, k := range keys </span><span class="cov0" title="0">{
+                if s, ok := k.(string); ok </span><span class="cov0" title="0">{
+                        result = append(result, s)
+                }</span>
+        }
+        <span class="cov0" title="0">return result, nil</span>
+}
+
+func (c *VaultClient) ReadSecret(org, secret string) (map[string]interface{}, error) <span class="cov0" title="0">{
+        path := fmt.Sprintf("%s/data/%s/%s", c.mount, org, secret)
+        resp, err := c.client.Logical().Read(path)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to read secret %s/%s: %w", org, secret, err)
+        }</span>
+        <span class="cov0" title="0">if resp == nil </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">dataRaw, ok := resp.Data["data"]
+        if !ok </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+
+        <span class="cov0" title="0">data, ok := dataRaw.(map[string]interface{})
+        if !ok </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("data is not a map[string]interface{}")
+        }</span>
+
+        <span class="cov0" title="0">return data, nil</span>
+}
+
+func (c *VaultClient) Token() string <span class="cov0" title="0">{
+        return c.token
+}</span>
+
+func (c *VaultClient) Address() string <span class="cov0" title="0">{
+        return c.address
+}</span>
+
+func (c *VaultClient) Mount() string <span class="cov0" title="0">{
+        return c.mount
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
