@@ -18,15 +18,15 @@ const (
 
 type SyncStatus struct {
 	LastSync            time.Time `json:"last_sync"`
-	LastOrg             string    `json:"last_org"`
-	TotalOrgs           int       `json:"total_organizations"`
-	SyncedOrgs          int       `json:"synced_organizations"`
-	TotalSecrets        int       `json:"total_secrets"`
-	SyncedSecrets       int       `json:"synced_secrets"`
+	CompletedAt         time.Time `json:"completed_at,omitempty"`
+	StartedAt           time.Time `json:"started_at,omitempty"`
 	Status              string    `json:"status"`
 	LastError           string    `json:"last_error,omitempty"`
-	StartedAt           time.Time `json:"started_at,omitempty"`
-	CompletedAt         time.Time `json:"completed_at,omitempty"`
+	LastOrg             string    `json:"last_org"`
+	TotalSecrets        int       `json:"total_secrets"`
+	SyncedSecrets       int       `json:"synced_secrets"`
+	SyncedOrgs          int       `json:"synced_organizations"`
+	TotalOrgs           int       `json:"total_organizations"`
 	Failed              int       `json:"failed"`
 	OrganizationsSynced int       `json:"organizations_synced,omitempty"`
 	SecretsSynced       int       `json:"secrets_synced,omitempty"`
@@ -135,8 +135,16 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 		return logical.ErrorResponse("configuration not found"), logical.ErrInvalidRequest
 	}
 
-	orgs := data.Get("organizations").([]string)
-	dryRun := data.Get("dry_run").(bool)
+	orgsRaw, ok := data.Get("organizations").([]string)
+	if !ok {
+		return logical.ErrorResponse("organizations must be a string slice"), logical.ErrInvalidRequest
+	}
+	orgs := orgsRaw
+	dryRunRaw, ok := data.Get("dry_run").(bool)
+	if !ok {
+		return logical.ErrorResponse("dry_run must be a boolean"), logical.ErrInvalidRequest
+	}
+	dryRun := dryRunRaw
 
 	vaultClient, err := b.createVaultClient(config)
 	if err != nil {
@@ -149,7 +157,9 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 	}
 	defer func() {
 		if clientToken != "" {
-			vaultClient.Auth().Token().RevokeSelf(clientToken)
+			if revokeErr := vaultClient.Auth().Token().RevokeSelf(clientToken); revokeErr != nil {
+				b.logger.Warn("failed to revoke token", "error", revokeErr)
+			}
 		}
 	}()
 
@@ -160,7 +170,7 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 		StartedAt: time.Now().UTC(),
 	}
 
-	if err := b.saveSyncStatus(ctx, req.Storage, status); err != nil {
+	if err = b.saveSyncStatus(ctx, req.Storage, status); err != nil {
 		return nil, err
 	}
 
@@ -172,7 +182,9 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 		if err != nil {
 			status.Status = "failed"
 			status.LastError = err.Error()
-			b.saveSyncStatus(ctx, req.Storage, status)
+			if saveErr := b.saveSyncStatus(ctx, req.Storage, status); saveErr != nil {
+				b.logger.Error("failed to save sync status", "error", saveErr)
+			}
 			return logical.ErrorResponse("failed to list organizations: " + err.Error()), logical.ErrInvalidRequest
 		}
 	}
@@ -316,7 +328,7 @@ func (b *Backend) pathSyncHistoryRead(ctx context.Context, req *logical.Request,
 	}
 
 	var keys []string
-	if err := entry.DecodeJSON(&keys); err != nil {
+	if err = entry.DecodeJSON(&keys); err != nil {
 		return nil, err
 	}
 
@@ -356,7 +368,11 @@ func (b *Backend) pathSyncHistoryRead(ctx context.Context, req *logical.Request,
 }
 
 func (b *Backend) pathSyncHistoryTimestampRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	timestamp := data.Get("timestamp").(string)
+	timestampRaw, ok := data.Get("timestamp").(string)
+	if !ok {
+		return logical.ErrorResponse("timestamp must be a string"), logical.ErrInvalidRequest
+	}
+	timestamp := timestampRaw
 	if timestamp == "" {
 		return logical.ErrorResponse("timestamp is required"), logical.ErrInvalidRequest
 	}
@@ -564,14 +580,16 @@ func (b *Backend) saveSyncHistory(ctx context.Context, storage logical.Storage, 
 		return err
 	}
 
-	if err := storage.Put(ctx, historyEntry); err != nil {
+	if err = storage.Put(ctx, historyEntry); err != nil {
 		return err
 	}
 
 	keysEntry, err := storage.Get(ctx, syncHistoryListKey)
 	var keys []string
 	if err == nil && keysEntry != nil {
-		keysEntry.DecodeJSON(&keys)
+		if decodeErr := keysEntry.DecodeJSON(&keys); decodeErr != nil {
+			return fmt.Errorf("failed to decode keys: %w", decodeErr)
+		}
 	}
 
 	keys = append(keys, key)

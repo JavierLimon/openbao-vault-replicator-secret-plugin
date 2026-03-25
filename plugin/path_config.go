@@ -107,14 +107,43 @@ func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 }
 
 func (b *Backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	vaultAddress, ok := data.Get("vault_address").(string)
+	if !ok {
+		return logical.ErrorResponse("vault_address must be a string"), logical.ErrInvalidRequest
+	}
+	vaultMount, ok := data.Get("vault_mount").(string)
+	if !ok {
+		return logical.ErrorResponse("vault_mount must be a string"), logical.ErrInvalidRequest
+	}
+	approleRoleID, ok := data.Get("approle_role_id").(string)
+	if !ok {
+		return logical.ErrorResponse("approle_role_id must be a string"), logical.ErrInvalidRequest
+	}
+	approleSecretID, ok := data.Get("approle_secret_id").(string)
+	if !ok {
+		return logical.ErrorResponse("approle_secret_id must be a string"), logical.ErrInvalidRequest
+	}
+	destinationToken, ok := data.Get("destination_token").(string)
+	if !ok {
+		return logical.ErrorResponse("destination_token must be a string"), logical.ErrInvalidRequest
+	}
+	destinationMount, ok := data.Get("destination_mount").(string)
+	if !ok {
+		return logical.ErrorResponse("destination_mount must be a string"), logical.ErrInvalidRequest
+	}
+	organizationPath, ok := data.Get("organization_path").(string)
+	if !ok {
+		return logical.ErrorResponse("organization_path must be a string"), logical.ErrInvalidRequest
+	}
+
 	config := &Configuration{
-		VaultAddress:     data.Get("vault_address").(string),
-		VaultMount:       data.Get("vault_mount").(string),
-		AppRoleRoleID:    data.Get("approle_role_id").(string),
-		AppRoleSecretID:  data.Get("approle_secret_id").(string),
-		DestinationToken: data.Get("destination_token").(string),
-		DestinationMount: data.Get("destination_mount").(string),
-		OrganizationPath: data.Get("organization_path").(string),
+		VaultAddress:     vaultAddress,
+		VaultMount:       vaultMount,
+		AppRoleRoleID:    approleRoleID,
+		AppRoleSecretID:  approleSecretID,
+		DestinationToken: destinationToken,
+		DestinationMount: destinationMount,
+		OrganizationPath: organizationPath,
 	}
 
 	entry, err := logical.StorageEntryJSON(configStoragePath, config)
