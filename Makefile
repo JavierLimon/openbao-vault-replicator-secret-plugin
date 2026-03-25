@@ -1,4 +1,4 @@
-.PHONY: build test test-cover lint fmt clean
+.PHONY: build test test-cover lint fmt
 
 NAME := vault-replicator
 PLUGIN_NAME := replicator
@@ -12,20 +12,15 @@ build:
 	$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(PLUGIN_NAME) ./cmd/vault-replicator
 
 test:
-	$(GO) test -v ./plugin/...
+	$(GO) test -v ./...
 
 test-cover:
-	$(GO) test -v -coverprofile=coverage.out ./plugin/...
+	$(GO) test -v -coverprofile=coverage.out ./...
 	$(GO) tool cover -html=coverage.out -o coverage.html
 
 lint:
-	$(GO) vet ./plugin/...
-	golangci-lint run ./plugin/...
+	golangci-lint run
 
 fmt:
-	$(GO) fmt ./plugin/...
-	gofmt -s -w ./plugin/...
-
-clean:
-	rm -rf $(BUILD_DIR)
-	rm -f coverage.out coverage.html
+	$(GO) fmt ./...
+	goimports -w .
