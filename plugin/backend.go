@@ -10,10 +10,10 @@ import (
 )
 
 type Backend struct {
-	*framework.Backend
 	storage logical.Storage
-	mu      sync.RWMutex
 	logger  hclog.Logger
+	*framework.Backend
+	mu sync.RWMutex
 }
 
 func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {
@@ -42,13 +42,4 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 	}
 
 	return b, nil
-}
-
-func configExistenceCheck(ctx context.Context, req *logical.Request, data *framework.FieldData) (bool, error) {
-	storage := req.Storage
-	entry, err := storage.Get(ctx, configStoragePath)
-	if err != nil {
-		return false, err
-	}
-	return entry != nil, nil
 }

@@ -7,12 +7,12 @@ import (
 )
 
 type VaultClient struct {
+	client   *api.Client
 	address  string
 	mount    string
 	roleID   string
 	secretID string
 	token    string
-	client   *api.Client
 }
 
 func NewVaultClient(addr, mount, roleID, secretID string) (*VaultClient, error) {
