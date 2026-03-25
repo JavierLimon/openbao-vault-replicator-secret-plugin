@@ -13,33 +13,33 @@ const (
 
 // Configuration holds the plugin configuration
 type Configuration struct {
-	VaultAddress       string 
-	VaultMount         string 
-	AppRoleRoleID      string 
-	AppRoleSecretID    string 
-	DestinationToken  string 
-	DestinationMount  string 
-	OrganizationPath  string 
+	VaultAddress     string `json:"vault_address"`
+	VaultMount       string `json:"vault_mount"`
+	AppRoleRoleID    string `json:"approle_role_id"`
+	AppRoleSecretID  string `json:"approle_secret_id"`
+	DestinationToken string `json:"destination_token"`
+	DestinationMount string `json:"destination_mount"`
+	OrganizationPath string `json:"organization_path"`
 }
 
 // pathConfig returns the config path
 func (b *Backend) pathConfig() *framework.Path {
 	return &framework.Path{
-		Pattern:      "config",
-		Operations: map[logical.Operation]*framework.OperationHandler{
-			logical.ReadOperation: &framework.OperationHandler{
+		Pattern: "config",
+		Operations: map[logical.Operation]framework.OperationHandler{
+			logical.ReadOperation: {
 				Summary:     "Read configuration",
 				Description: "Returns the plugin configuration (token is masked)",
 			},
-			logical.CreateOperation: &framework.OperationHandler{
+			logical.CreateOperation: {
 				Summary:     "Create/Update configuration",
 				Description: "Creates or updates the plugin configuration",
 			},
-			logical.UpdateOperation: &framework.OperationHandler{
+			logical.UpdateOperation: {
 				Summary:     "Update configuration",
 				Description: "Updates the plugin configuration",
 			},
-			logical.DeleteOperation: &framework.OperationHandler{
+			logical.DeleteOperation: {
 				Summary:     "Delete configuration",
 				Description: "Deletes the plugin configuration",
 			},
@@ -74,7 +74,7 @@ func (b *Backend) pathConfig() *framework.Path {
 				Description: "Path in Vault where orgs live (e.g., data/)",
 			},
 		},
-		ExistenceCheck: b.HandleExistenceCheck,
+		ExistenceCheck:  b.HandleExistenceCheck,
 		HelpSynopsis:    "Configuration endpoint for Vault Replicator plugin",
 		HelpDescription: "Configure the connection to Vault and OpenBao for secret replication",
 	}
@@ -82,7 +82,7 @@ func (b *Backend) pathConfig() *framework.Path {
 
 // pathConfigRead handles reading the configuration
 func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	config, err := b.readConfig(ctx)
+	config, err := b.readConfig(ctx, req.Storage)
 	if err != nil {
 		return nil, err
 	}
@@ -96,13 +96,13 @@ func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 
 	return &logical.Response{
 		Data: map[string]interface{}{
-			"vault_address":       config.VaultAddress,
-			"vault_mount":         config.VaultMount,
-			"approle_role_id":    config.AppRoleRoleID,
-			"approle_secret_id":  config.AppRoleSecretID,
-			"destination_token":  config.DestinationToken,
-			"destination_mount":  config.DestinationMount,
-			"organization_path":  config.OrganizationPath,
+			"vault_address":     config.VaultAddress,
+			"vault_mount":       config.VaultMount,
+			"approle_role_id":   config.AppRoleRoleID,
+			"approle_secret_id": config.AppRoleSecretID,
+			"destination_token": config.DestinationToken,
+			"destination_mount": config.DestinationMount,
+			"organization_path": config.OrganizationPath,
 		},
 	}, nil
 }
@@ -110,13 +110,13 @@ func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 // pathConfigWrite handles writing the configuration
 func (b *Backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	config := &Configuration{
-		VaultAddress:      data.Get("vault_address").(string),
-		VaultMount:        data.Get("vault_mount").(string),
-		AppRoleRoleID:     data.Get("approle_role_id").(string),
-		AppRoleSecretID:   data.Get("approle_secret_id").(string),
-		DestinationToken:  data.Get("destination_token").(string),
-		DestinationMount:  data.Get("destination_mount").(string),
-		OrganizationPath:  data.Get("organization_path").(string),
+		VaultAddress:     data.Get("vault_address").(string),
+		VaultMount:       data.Get("vault_mount").(string),
+		AppRoleRoleID:    data.Get("approle_role_id").(string),
+		AppRoleSecretID:  data.Get("approle_secret_id").(string),
+		DestinationToken: data.Get("destination_token").(string),
+		DestinationMount: data.Get("destination_mount").(string),
+		OrganizationPath: data.Get("organization_path").(string),
 	}
 
 	entry, err := logical.StorageEntryJSON(configStoragePath, config)
@@ -140,8 +140,8 @@ func (b *Backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 }
 
 // readConfig reads the configuration from storage
-func (b *Backend) readConfig(ctx context.Context) (*Configuration, error) {
-	entry, err := req.Storage.Get(ctx, configStoragePath)
+func (b *Backend) readConfig(ctx context.Context, storage logical.Storage) (*Configuration, error) {
+	entry, err := storage.Get(ctx, configStoragePath)
 	if err != nil {
 		return nil, err
 	}
