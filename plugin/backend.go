@@ -33,6 +33,7 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 			b.pathSyncStatus(),
 			b.pathSyncHistory(),
 			b.pathSyncHistoryTimestamp(),
+			b.pathAuditLogs(),
 		},
 		BackendType: logical.TypeLogical,
 	}
