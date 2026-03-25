@@ -11,7 +11,6 @@ const (
 	configStoragePath = "config"
 )
 
-// Configuration holds the plugin configuration
 type Configuration struct {
 	VaultAddress     string `json:"vault_address"`
 	VaultMount       string `json:"vault_mount"`
@@ -22,26 +21,29 @@ type Configuration struct {
 	OrganizationPath string `json:"organization_path"`
 }
 
-// pathConfig returns the config path
 func (b *Backend) pathConfig() *framework.Path {
 	return &framework.Path{
 		Pattern: "config",
 		Operations: map[logical.Operation]framework.OperationHandler{
-			logical.ReadOperation: {
+			logical.ReadOperation: &framework.PathOperation{
 				Summary:     "Read configuration",
 				Description: "Returns the plugin configuration (token is masked)",
+				Callback:    b.pathConfigRead,
 			},
-			logical.CreateOperation: {
+			logical.CreateOperation: &framework.PathOperation{
 				Summary:     "Create/Update configuration",
 				Description: "Creates or updates the plugin configuration",
+				Callback:    b.pathConfigWrite,
 			},
-			logical.UpdateOperation: {
+			logical.UpdateOperation: &framework.PathOperation{
 				Summary:     "Update configuration",
 				Description: "Updates the plugin configuration",
+				Callback:    b.pathConfigWrite,
 			},
-			logical.DeleteOperation: {
+			logical.DeleteOperation: &framework.PathOperation{
 				Summary:     "Delete configuration",
 				Description: "Deletes the plugin configuration",
+				Callback:    b.pathConfigDelete,
 			},
 		},
 		Fields: map[string]*framework.FieldSchema{
@@ -74,13 +76,11 @@ func (b *Backend) pathConfig() *framework.Path {
 				Description: "Path in Vault where orgs live (e.g., data/)",
 			},
 		},
-		ExistenceCheck:  b.HandleExistenceCheck,
 		HelpSynopsis:    "Configuration endpoint for Vault Replicator plugin",
 		HelpDescription: "Configure the connection to Vault and OpenBao for secret replication",
 	}
 }
 
-// pathConfigRead handles reading the configuration
 func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	config, err := b.readConfig(ctx, req.Storage)
 	if err != nil {
@@ -90,7 +90,6 @@ func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 		return nil, nil
 	}
 
-	// Mask sensitive fields
 	config.AppRoleSecretID = ""
 	config.DestinationToken = "[MASKED]"
 
@@ -107,7 +106,6 @@ func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 	}, nil
 }
 
-// pathConfigWrite handles writing the configuration
 func (b *Backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	config := &Configuration{
 		VaultAddress:     data.Get("vault_address").(string),
@@ -131,7 +129,6 @@ func (b *Backend) pathConfigWrite(ctx context.Context, req *logical.Request, dat
 	return nil, nil
 }
 
-// pathConfigDelete handles deleting the configuration
 func (b *Backend) pathConfigDelete(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	if err := req.Storage.Delete(ctx, configStoragePath); err != nil {
 		return nil, err
@@ -139,7 +136,6 @@ func (b *Backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 	return nil, nil
 }
 
-// readConfig reads the configuration from storage
 func (b *Backend) readConfig(ctx context.Context, storage logical.Storage) (*Configuration, error) {
 	entry, err := storage.Get(ctx, configStoragePath)
 	if err != nil {

@@ -2,17 +2,54 @@ package replicator
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	"github.com/hashicorp/vault/api"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
+
+const (
+	syncStatusPath     = "sync/status"
+	syncHistoryPrefix  = "sync/history/"
+	syncHistoryListKey = "sync/history"
+)
+
+type SyncStatus struct {
+	LastSync            time.Time `json:"last_sync"`
+	LastOrg             string    `json:"last_org"`
+	TotalOrgs           int       `json:"total_organizations"`
+	SyncedOrgs          int       `json:"synced_organizations"`
+	TotalSecrets        int       `json:"total_secrets"`
+	SyncedSecrets       int       `json:"synced_secrets"`
+	Status              string    `json:"status"`
+	LastError           string    `json:"last_error,omitempty"`
+	StartedAt           time.Time `json:"started_at,omitempty"`
+	CompletedAt         time.Time `json:"completed_at,omitempty"`
+	Failed              int       `json:"failed"`
+	OrganizationsSynced int       `json:"organizations_synced,omitempty"`
+	SecretsSynced       int       `json:"secrets_synced,omitempty"`
+	DurationSeconds     int       `json:"duration_seconds,omitempty"`
+}
+
+type SyncHistoryEntry struct {
+	Timestamp           time.Time `json:"timestamp"`
+	Status              string    `json:"status"`
+	OrganizationsSynced int       `json:"organizations_synced"`
+	SecretsSynced       int       `json:"secrets_synced"`
+	Failed              int       `json:"failed"`
+	DurationSeconds     int       `json:"duration_seconds"`
+}
 
 func (b *Backend) pathSync() *framework.Path {
 	return &framework.Path{
 		Pattern: "sync/secrets",
 		Operations: map[logical.Operation]framework.OperationHandler{
-			logical.CreateOperation: {
-				Summary: "Trigger secret replication",
+			logical.CreateOperation: &framework.PathOperation{
+				Summary:     "Trigger secret replication",
+				Description: "Triggers the replication of secrets from HashiCorp Vault to OpenBao",
+				Callback:    b.pathSyncSecrets,
 			},
 		},
 		Fields: map[string]*framework.FieldSchema{
@@ -30,10 +67,519 @@ func (b *Backend) pathSync() *framework.Path {
 	}
 }
 
+func (b *Backend) pathSyncStatus() *framework.Path {
+	return &framework.Path{
+		Pattern: "sync/status",
+		Operations: map[logical.Operation]framework.OperationHandler{
+			logical.ReadOperation: &framework.PathOperation{
+				Summary:     "Get current sync status",
+				Description: "Returns the current status of the secret replication process",
+				Callback:    b.pathSyncStatusRead,
+			},
+		},
+		HelpSynopsis:    "Get the current sync status",
+		HelpDescription: "Returns the current status of the secret replication process",
+	}
+}
+
+func (b *Backend) pathSyncHistory() *framework.Path {
+	return &framework.Path{
+		Pattern: "sync/history",
+		Operations: map[logical.Operation]framework.OperationHandler{
+			logical.ListOperation: &framework.PathOperation{
+				Summary:     "List sync history",
+				Description: "Lists past sync operations",
+				Callback:    b.pathSyncHistoryList,
+			},
+			logical.ReadOperation: &framework.PathOperation{
+				Summary:     "Get sync history entry",
+				Description: "Retrieves a specific sync history entry",
+				Callback:    b.pathSyncHistoryRead,
+			},
+		},
+		HelpSynopsis:    "List or get sync history",
+		HelpDescription: "Lists past sync operations or retrieves a specific sync history entry",
+	}
+}
+
+func (b *Backend) pathSyncHistoryTimestamp() *framework.Path {
+	return &framework.Path{
+		Pattern: "sync/history/" + framework.GenericNameRegex("timestamp"),
+		Operations: map[logical.Operation]framework.OperationHandler{
+			logical.ReadOperation: &framework.PathOperation{
+				Summary:     "Get sync history entry by timestamp",
+				Description: "Retrieves a specific sync history entry by its timestamp",
+				Callback:    b.pathSyncHistoryTimestampRead,
+			},
+		},
+		Fields: map[string]*framework.FieldSchema{
+			"timestamp": {
+				Type:        framework.TypeString,
+				Description: "The timestamp of the sync history entry",
+			},
+		},
+		HelpSynopsis:    "Get sync history entry by timestamp",
+		HelpDescription: "Retrieves a specific sync history entry by its timestamp",
+	}
+}
+
 func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	config, err := b.readConfig(ctx, req.Storage)
+	if err != nil {
+		return nil, err
+	}
+	if config == nil {
+		return logical.ErrorResponse("configuration not found"), logical.ErrInvalidRequest
+	}
+
+	orgs := data.Get("organizations").([]string)
+	dryRun := data.Get("dry_run").(bool)
+
+	vaultClient, err := b.createVaultClient(config)
+	if err != nil {
+		return logical.ErrorResponse("failed to create Vault client: " + err.Error()), logical.ErrInvalidRequest
+	}
+
+	clientToken, err := b.loginToVault(vaultClient, config)
+	if err != nil {
+		return logical.ErrorResponse("failed to login to Vault: " + err.Error()), logical.ErrInvalidRequest
+	}
+	defer func() {
+		if clientToken != "" {
+			vaultClient.Auth().Token().RevokeSelf(clientToken)
+		}
+	}()
+
+	vaultClient.SetToken(clientToken)
+
+	status := &SyncStatus{
+		Status:    "running",
+		StartedAt: time.Now().UTC(),
+	}
+
+	if err := b.saveSyncStatus(ctx, req.Storage, status); err != nil {
+		return nil, err
+	}
+
+	var allOrgs []string
+	if len(orgs) > 0 {
+		allOrgs = orgs
+	} else {
+		allOrgs, err = b.listOrganizations(vaultClient, config)
+		if err != nil {
+			status.Status = "failed"
+			status.LastError = err.Error()
+			b.saveSyncStatus(ctx, req.Storage, status)
+			return logical.ErrorResponse("failed to list organizations: " + err.Error()), logical.ErrInvalidRequest
+		}
+	}
+
+	status.TotalOrgs = len(allOrgs)
+	status.LastOrg = ""
+
+	for _, org := range allOrgs {
+		status.LastOrg = org
+
+		secrets, err := b.listSecretsInOrg(vaultClient, config, org)
+		if err != nil {
+			status.Failed++
+			continue
+		}
+
+		status.TotalSecrets += len(secrets)
+
+		for _, secret := range secrets {
+			secretData, err := b.readSecret(vaultClient, config, org, secret)
+			if err != nil {
+				status.Failed++
+				continue
+			}
+
+			if !dryRun {
+				if err := b.writeToLocalKV(org, secret, secretData); err != nil {
+					status.Failed++
+					status.LastError = fmt.Sprintf("failed to write %s/%s: %v", org, secret, err)
+					continue
+				}
+			}
+
+			status.SyncedSecrets++
+		}
+
+		status.SyncedOrgs++
+		if err := b.saveSyncStatus(ctx, req.Storage, status); err != nil {
+			b.logger.Error("failed to save sync status", "error", err)
+		}
+	}
+
+	status.Status = "completed"
+	status.CompletedAt = time.Now().UTC()
+	status.OrganizationsSynced = status.SyncedOrgs
+	status.SecretsSynced = status.SyncedSecrets
+	status.DurationSeconds = int(status.CompletedAt.Sub(status.StartedAt).Seconds())
+
+	if err := b.saveSyncStatus(ctx, req.Storage, status); err != nil {
+		return nil, err
+	}
+
+	if err := b.saveSyncHistory(ctx, req.Storage, status); err != nil {
+		b.logger.Error("failed to save sync history", "error", err)
+	}
+
 	return &logical.Response{
 		Data: map[string]interface{}{
-			"status": "not implemented yet",
+			"started_at":           status.StartedAt.Format(time.RFC3339),
+			"status":               status.Status,
+			"organizations_synced": status.OrganizationsSynced,
+			"secrets_synced":       status.SecretsSynced,
+			"failed":               status.Failed,
+			"completed_at":         status.CompletedAt.Format(time.RFC3339),
+			"duration_seconds":     status.DurationSeconds,
 		},
 	}, nil
+}
+
+func (b *Backend) pathSyncStatusRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	status, err := b.readSyncStatus(ctx, req.Storage)
+	if err != nil {
+		return nil, err
+	}
+	if status == nil {
+		return &logical.Response{
+			Data: map[string]interface{}{
+				"last_sync":            nil,
+				"last_org":             nil,
+				"total_organizations":  0,
+				"synced_organizations": 0,
+				"total_secrets":        0,
+				"synced_secrets":       0,
+				"status":               "idle",
+				"last_error":           nil,
+			},
+		}, nil
+	}
+
+	lastSync := ""
+	if !status.LastSync.IsZero() {
+		lastSync = status.LastSync.Format(time.RFC3339)
+	}
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"last_sync":            lastSync,
+			"last_org":             status.LastOrg,
+			"total_organizations":  status.TotalOrgs,
+			"synced_organizations": status.SyncedOrgs,
+			"total_secrets":        status.TotalSecrets,
+			"synced_secrets":       status.SyncedSecrets,
+			"status":               status.Status,
+			"last_error":           status.LastError,
+		},
+	}, nil
+}
+
+func (b *Backend) pathSyncHistoryList(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	entry, err := req.Storage.Get(ctx, syncHistoryListKey)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return &logical.Response{
+			Data: map[string]interface{}{
+				"keys": []string{},
+			},
+		}, nil
+	}
+
+	var keys []string
+	if err := entry.DecodeJSON(&keys); err != nil {
+		return nil, err
+	}
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"keys": keys,
+		},
+	}, nil
+}
+
+func (b *Backend) pathSyncHistoryRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	entry, err := req.Storage.Get(ctx, syncHistoryListKey)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return logical.ErrorResponse("sync history entry not found"), logical.ErrInvalidRequest
+	}
+
+	var keys []string
+	if err := entry.DecodeJSON(&keys); err != nil {
+		return nil, err
+	}
+
+	if len(keys) == 0 {
+		return &logical.Response{
+			Data: map[string]interface{}{
+				"keys": []string{},
+			},
+		}, nil
+	}
+
+	latestTimestamp := keys[len(keys)-1]
+	path := syncHistoryPrefix + latestTimestamp
+	historyEntry, err := req.Storage.Get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if historyEntry == nil {
+		return logical.ErrorResponse("sync history entry not found"), logical.ErrInvalidRequest
+	}
+
+	var history SyncHistoryEntry
+	if err := historyEntry.DecodeJSON(&history); err != nil {
+		return nil, err
+	}
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"timestamp":            history.Timestamp.Format(time.RFC3339),
+			"status":               history.Status,
+			"organizations_synced": history.OrganizationsSynced,
+			"secrets_synced":       history.SecretsSynced,
+			"failed":               history.Failed,
+			"duration_seconds":     history.DurationSeconds,
+		},
+	}, nil
+}
+
+func (b *Backend) pathSyncHistoryTimestampRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	timestamp := data.Get("timestamp").(string)
+	if timestamp == "" {
+		return logical.ErrorResponse("timestamp is required"), logical.ErrInvalidRequest
+	}
+
+	path := syncHistoryPrefix + timestamp
+	entry, err := req.Storage.Get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return logical.ErrorResponse("sync history entry not found"), logical.ErrInvalidRequest
+	}
+
+	var history SyncHistoryEntry
+	if err := entry.DecodeJSON(&history); err != nil {
+		return nil, err
+	}
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"timestamp":            history.Timestamp.Format(time.RFC3339),
+			"status":               history.Status,
+			"organizations_synced": history.OrganizationsSynced,
+			"secrets_synced":       history.SecretsSynced,
+			"failed":               history.Failed,
+			"duration_seconds":     history.DurationSeconds,
+		},
+	}, nil
+}
+
+func (b *Backend) createVaultClient(config *Configuration) (*api.Client, error) {
+	vaultConfig := api.DefaultConfig()
+	vaultConfig.Address = config.VaultAddress
+
+	client, err := api.NewClient(vaultConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Vault client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (b *Backend) loginToVault(client *api.Client, config *Configuration) (string, error) {
+	loginData := map[string]interface{}{
+		"role_id":   config.AppRoleRoleID,
+		"secret_id": config.AppRoleSecretID,
+	}
+
+	secret, err := client.Logical().Write("auth/approle/login", loginData)
+	if err != nil {
+		return "", fmt.Errorf("AppRole login failed: %w", err)
+	}
+
+	if secret == nil || secret.Data == nil {
+		return "", fmt.Errorf("invalid response from AppRole login")
+	}
+
+	clientToken, ok := secret.Data["client_token"].(string)
+	if !ok || clientToken == "" {
+		return "", fmt.Errorf("client_token not found in login response")
+	}
+
+	return clientToken, nil
+}
+
+func (b *Backend) listOrganizations(client *api.Client, config *Configuration) ([]string, error) {
+	mount := config.VaultMount
+	if mount == "" {
+		mount = "kv2"
+	}
+
+	path := fmt.Sprintf("%s/metadata/%s", mount, config.OrganizationPath)
+	secret, err := client.Logical().List(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list organizations at %s: %w", path, err)
+	}
+	if secret == nil {
+		return []string{}, nil
+	}
+
+	keysRaw, ok := secret.Data["keys"]
+	if !ok {
+		return []string{}, nil
+	}
+
+	keys, ok := keysRaw.([]interface{})
+	if !ok {
+		return []string{}, nil
+	}
+
+	var orgs []string
+	for _, k := range keys {
+		if keyStr, ok := k.(string); ok {
+			orgs = append(orgs, keyStr)
+		}
+	}
+
+	return orgs, nil
+}
+
+func (b *Backend) listSecretsInOrg(client *api.Client, config *Configuration, org string) ([]string, error) {
+	mount := config.VaultMount
+	if mount == "" {
+		mount = "kv2"
+	}
+
+	path := fmt.Sprintf("%s/metadata/%s%s", mount, config.OrganizationPath, org)
+	secret, err := client.Logical().List(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list secrets in org %s: %w", org, err)
+	}
+	if secret == nil {
+		return []string{}, nil
+	}
+
+	keysRaw, ok := secret.Data["keys"]
+	if !ok {
+		return []string{}, nil
+	}
+
+	keys, ok := keysRaw.([]interface{})
+	if !ok {
+		return []string{}, nil
+	}
+
+	var secrets []string
+	for _, k := range keys {
+		if keyStr, ok := k.(string); ok {
+			secrets = append(secrets, keyStr)
+		}
+	}
+
+	return secrets, nil
+}
+
+func (b *Backend) readSecret(client *api.Client, config *Configuration, org, secret string) (map[string]interface{}, error) {
+	mount := config.VaultMount
+	if mount == "" {
+		mount = "kv2"
+	}
+
+	path := fmt.Sprintf("%s/data/%s%s%s", mount, config.OrganizationPath, org, secret)
+	secretData, err := client.Logical().Read(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read secret %s/%s: %w", org, secret, err)
+	}
+	if secretData == nil || secretData.Data == nil {
+		return nil, nil
+	}
+
+	dataRaw, ok := secretData.Data["data"]
+	if !ok {
+		return nil, nil
+	}
+
+	data, ok := dataRaw.(map[string]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	return data, nil
+}
+
+func (b *Backend) saveSyncStatus(ctx context.Context, storage logical.Storage, status *SyncStatus) error {
+	status.LastSync = time.Now().UTC()
+
+	entry, err := logical.StorageEntryJSON(syncStatusPath, status)
+	if err != nil {
+		return err
+	}
+
+	return storage.Put(ctx, entry)
+}
+
+func (b *Backend) readSyncStatus(ctx context.Context, storage logical.Storage) (*SyncStatus, error) {
+	entry, err := storage.Get(ctx, syncStatusPath)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		return nil, nil
+	}
+
+	var status SyncStatus
+	if err := entry.DecodeJSON(&status); err != nil {
+		return nil, err
+	}
+
+	return &status, nil
+}
+
+func (b *Backend) saveSyncHistory(ctx context.Context, storage logical.Storage, status *SyncStatus) error {
+	entry := SyncHistoryEntry{
+		Timestamp:           status.CompletedAt,
+		Status:              status.Status,
+		OrganizationsSynced: status.OrganizationsSynced,
+		SecretsSynced:       status.SecretsSynced,
+		Failed:              status.Failed,
+		DurationSeconds:     status.DurationSeconds,
+	}
+
+	key := status.CompletedAt.Format(time.RFC3339)
+	historyEntry, err := logical.StorageEntryJSON(syncHistoryPrefix+key, entry)
+	if err != nil {
+		return err
+	}
+
+	if err := storage.Put(ctx, historyEntry); err != nil {
+		return err
+	}
+
+	keysEntry, err := storage.Get(ctx, syncHistoryListKey)
+	var keys []string
+	if err == nil && keysEntry != nil {
+		keysEntry.DecodeJSON(&keys)
+	}
+
+	keys = append(keys, key)
+
+	newKeysEntry, err := logical.StorageEntryJSON(syncHistoryListKey, keys)
+	if err != nil {
+		return err
+	}
+
+	return storage.Put(ctx, newKeysEntry)
 }
