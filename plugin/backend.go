@@ -26,28 +26,21 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 		logger:  conf.Logger,
 	}
 	
-	b.Backend = framework.NewBackend(&framework.BackendConfig{
-		Logger:     conf.Logger,
-		StorageView: conf.StorageView,
-		System:     conf.System,
-	})
+	b.Backend = &framework.Backend{
+		Help: "Vault Replicator - Secret engine plugin for replicating secrets from Vault to OpenBao",
+		PathsSpecial: &logical.Paths{
+			Unauthenticated: []string{"health"},
+		},
+		Paths: []*framework.Path{
+			b.pathConfig(),
+			b.pathSync(),
+		},
+		BackendType: logical.TypeLogical,
+	}
 	
-	b.Paths = b.paths()
+	if err := b.Setup(ctx, conf); err != nil {
+		return nil, err
+	}
 	
 	return b, nil
-}
-
-// paths returns all path definitions
-func (b *Backend) paths() []*framework.Path {
-	return []*framework.Path{
-		b.pathConfig(),
-		b.pathRoles(),
-		b.pathSync(),
-	}
-}
-
-// HandleExistenceCheck checks if resource exists (idempotent)
-func (b *Backend) HandleExistenceCheck(ctx context.Context, req *logical.Request, 
-	data *framework.FieldData) (bool, error) {
-	return false, nil
 }
