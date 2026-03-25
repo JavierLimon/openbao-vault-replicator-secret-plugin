@@ -3,8 +3,11 @@
 NAME := vault-replicator
 PLUGIN_NAME := replicator
 VERSION := 1.0.0
+COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "")
+DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+BUILD_TYPE := production
 GO := go
-GOFLAGS := -ldflags "-X github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin.version=$(VERSION)"
+GOFLAGS := -ldflags "-X github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin.Version=$(VERSION) -X github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin.Commit=$(COMMIT) -X github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin.Date=$(DATE) -X github.com/JavierLimon/openbao-vault-replicator-secret-plugin/plugin.BuildType=$(BUILD_TYPE)"
 BUILD_DIR := ./dist
 
 build: fmt
