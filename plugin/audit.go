@@ -19,14 +19,14 @@ const (
 
 type AuditEvent struct {
 	Timestamp     time.Time              `json:"timestamp"`
-	EventType     string                 `json:"event_type"`
-	RequestID     string                 `json:"request_id,omitempty"`
-	Organizations []string               `json:"organizations,omitempty"`
 	OrgCount      int                    `json:"org_count"`
 	SecretCount   int                    `json:"secret_count,omitempty"`
+	DurationMs    int64                  `json:"duration_ms,omitempty"`
+	EventType     string                 `json:"event_type"`
+	RequestID     string                 `json:"request_id,omitempty"`
 	Status        string                 `json:"status,omitempty"`
 	Error         string                 `json:"error,omitempty"`
-	DurationMs    int64                  `json:"duration_ms,omitempty"`
+	Organizations []string               `json:"organizations,omitempty"`
 	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 

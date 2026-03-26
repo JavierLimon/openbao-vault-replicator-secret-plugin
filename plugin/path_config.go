@@ -13,6 +13,7 @@ const (
 )
 
 type Configuration struct {
+	AllowDeletionSync    bool            `json:"allow_deletion_sync"`
 	VaultAddress         string          `json:"vault_address"`
 	VaultMount           string          `json:"vault_mount"`
 	AppRoleRoleID        string          `json:"approle_role_id"`
@@ -20,7 +21,6 @@ type Configuration struct {
 	DestinationToken     string          `json:"destination_token"`
 	DestinationMount     string          `json:"destination_mount"`
 	OrgSkipList          []string        `json:"org_skip_list"`
-	AllowDeletionSync    bool            `json:"allow_deletion_sync"`
 	OrgDeletionOverrides map[string]bool `json:"org_deletion_overrides"`
 }
 

@@ -479,8 +479,8 @@ const (
 )
 
 type ListOptions struct {
-	PageSize int
 	Prefix   string
+	PageSize int
 }
 
 func DefaultListOptions() *ListOptions {
