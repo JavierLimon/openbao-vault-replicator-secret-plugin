@@ -13,7 +13,8 @@ type Backend struct {
 	storage logical.Storage
 	logger  hclog.Logger
 	*framework.Backend
-	mu sync.RWMutex
+	mu      sync.RWMutex
+	metrics metrics
 }
 
 func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend, error) {
@@ -35,6 +36,7 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 			b.pathSyncHistoryTimestamp(),
 			b.pathAuditLogs(),
 			b.pathHealth(),
+			b.pathMetrics(),
 		},
 		BackendType: logical.TypeLogical,
 	}
