@@ -369,8 +369,8 @@ func TestValidateConfigExtended(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		config    *Configuration
 		wantError bool
+		config    *Configuration
 	}{
 		{
 			name: "valid config",

@@ -18,10 +18,10 @@ const (
 )
 
 type AuditEvent struct {
-	Timestamp     time.Time              `json:"timestamp"`
 	OrgCount      int                    `json:"org_count"`
 	SecretCount   int                    `json:"secret_count,omitempty"`
 	DurationMs    int64                  `json:"duration_ms,omitempty"`
+	Timestamp     time.Time              `json:"timestamp"`
 	EventType     string                 `json:"event_type"`
 	RequestID     string                 `json:"request_id,omitempty"`
 	Status        string                 `json:"status,omitempty"`
