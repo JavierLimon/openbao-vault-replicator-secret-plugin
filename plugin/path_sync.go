@@ -140,8 +140,8 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 	}
 
 	// Validate configuration
-	if err := ValidateConfig(config); err != nil {
-		return logical.ErrorResponse("invalid configuration: " + err.Error()), logical.ErrInvalidRequest
+	if configErr := ValidateConfig(config); configErr != nil {
+		return logical.ErrorResponse("invalid configuration: " + configErr.Error()), logical.ErrInvalidRequest
 	}
 
 	orgsRaw, ok := data.Get("organizations").([]string)

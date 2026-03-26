@@ -54,7 +54,7 @@ func (b *Backend) writeToLocalKVWithMetadata(org, secretName string, data map[st
 		"data": data,
 	}
 
-	if customMetadata != nil && len(customMetadata) > 0 {
+	if len(customMetadata) > 0 {
 		writeData["custom_metadata"] = customMetadata
 	}
 

@@ -32,9 +32,13 @@ Secret engine plugin for replicating secrets from HashiCorp Vault (KVv2) to Open
 | `approle_secret_id` | string | AppRole secret_id for Vault authentication |
 | `destination_token` | string | OpenBao token for writing replicated secrets |
 | `destination_mount` | string | OpenBao KVv2 mount for storing secrets (default: `kv2`) |
-| `organization_path` | string | Path in Vault where organizations live (e.g., `data/`) |
+| `org_skip_list` | array | Organizations to skip during sync (blacklist) |
+| `allow_deletion_sync` | bool | Enable deletion sync (delete secrets in destination when deleted in source) |
+| `org_deletion_overrides` | object | Per-organization deletion sync overrides (e.g., `{"org-1": false}`) |
 
 **Note:** When reading configuration, `approle_secret_id` and `destination_token` are masked for security.
+
+**Note:** `organization_path` is no longer required - KVv2 always uses `metadata/` for listing and `data/` for read/write.
 
 ---
 
@@ -91,7 +95,9 @@ Create or update the plugin configuration.
 | `approle_secret_id` | string | Yes | AppRole secret_id |
 | `destination_token` | string | Yes | OpenBao token for writes |
 | `destination_mount` | string | No | OpenBao KVv2 mount (default: `kv2`) |
-| `organization_path` | string | Yes | Base path for organizations |
+| `org_skip_list` | array | No | Organizations to skip (e.g., `["org-3", "org-4"]`) |
+| `allow_deletion_sync` | bool | No | Enable deletion sync (default: `false`) |
+| `org_deletion_overrides` | object | No | Per-org deletion overrides (e.g., `{"org-1": false}`) |
 
 #### Request
 
@@ -106,7 +112,30 @@ curl -X POST http://127.0.0.1:8200/v1/replicator/config \
     "approle_secret_id": "my-secret-id",
     "destination_token": "openbao-token-here",
     "destination_mount": "kv2",
-    "organization_path": "data/"
+    "org_skip_list": ["test-org", "deprecated-org"],
+    "allow_deletion_sync": false,
+    "org_deletion_overrides": {"org-1": false}
+  }'
+```
+
+**Example with deletion sync enabled:**
+
+```bash
+curl -X POST http://127.0.0.1:8200/v1/replicator/config \
+  -H "X-Vault-Token: ${VAULT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vault_address": "https://vault.example.com:8200",
+    "vault_mount": "kv2",
+    "approle_role_id": "my-role-id",
+    "approle_secret_id": "my-secret-id",
+    "destination_token": "openbao-token-here",
+    "destination_mount": "kv2",
+    "allow_deletion_sync": true,
+    "org_deletion_overrides": {
+      "org-sensitive": false,
+      "org-keep-forever": false
+    }
   }'
 ```
 
@@ -414,7 +443,8 @@ curl -X POST http://127.0.0.1:8200/v1/replicator/config \
     "approle_secret_id": "your-secret-id",
     "destination_token": "your-openbao-token",
     "destination_mount": "kv2",
-    "organization_path": "data/"
+    "org_skip_list": ["test-org"],
+    "allow_deletion_sync": false
   }'
 ```
 
@@ -460,3 +490,143 @@ The plugin stores data under these internal storage paths:
 | `sync/status` | Current sync status |
 | `sync/history` | List of all sync timestamps |
 | `sync/history/:timestamp` | Individual sync history entry |
+
+---
+
+## ACL Policies
+
+To use the plugin, you need to create appropriate policies in OpenBao.
+
+### Full Access Policy
+
+Grants complete access to all plugin endpoints:
+
+```hcl
+path "replicator/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+```
+
+### Read-Only Policy
+
+For monitoring and viewing configuration:
+
+```hcl
+path "replicator/config" {
+  capabilities = ["read"]
+}
+
+path "replicator/sync/status" {
+  capabilities = ["read"]
+}
+
+path "replicator/sync/history" {
+  capabilities = ["list", "read"]
+}
+
+path "replicator/health" {
+  capabilities = ["read"]
+}
+
+path "replicator/metrics" {
+  capabilities = ["read"]
+}
+```
+
+### Sync-Only Policy
+
+Allows triggering syncs but not modifying configuration:
+
+```hcl
+path "replicator/config" {
+  capabilities = ["read"]
+}
+
+path "replicator/sync/secrets" {
+  capabilities = ["create", "update"]
+}
+
+path "replicator/sync/status" {
+  capabilities = ["read"]
+}
+
+path "replicator/sync/history" {
+  capabilities = ["list", "read"]
+}
+```
+
+### Operator Policy
+
+Full access plus ability to manage the plugin:
+
+```hcl
+# Plugin management
+path "sys/plugins/catalog/*" {
+  capabilities = ["create", "read", "update", "delete"]
+}
+
+path "sys/mounts/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+# Plugin endpoints
+path "replicator/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+```
+
+### Vault Source Policy (AppRole)
+
+The plugin requires an AppRole in Vault with this policy to read secrets:
+
+```hcl
+# List organizations
+path "kv2/metadata/*" {
+  capabilities = ["list"]
+}
+
+# Read secrets (all orgs)
+path "kv2/data/*" {
+  capabilities = ["read"]
+}
+
+# Read secret metadata (for custom_metadata sync)
+path "kv2/metadata/*" {
+  capabilities = ["read"]
+}
+```
+
+**Note:** Replace `kv2` with your actual Vault KVv2 mount path.
+
+### Minimum Required Vault Policy
+
+For a specific subset of organizations:
+
+```hcl
+# List only specific orgs
+path "kv2/metadata/org-1/*" {
+  capabilities = ["list"]
+}
+
+path "kv2/metadata/org-2/*" {
+  capabilities = ["list"]
+}
+
+# Read secrets from specific orgs
+path "kv2/data/org-1/*" {
+  capabilities = ["read"]
+}
+
+path "kv2/data/org-2/*" {
+  capabilities = ["read"]
+}
+
+# Read metadata from specific orgs
+path "kv2/metadata/org-1/*" {
+  capabilities = ["read"]
+}
+
+path "kv2/metadata/org-2/*" {
+  capabilities = ["read"]
+}
+```
