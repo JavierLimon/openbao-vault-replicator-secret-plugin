@@ -91,10 +91,10 @@ func compareVersions(a, b string) int {
 		partA := 0
 		partB := 0
 		if i < len(partsA) {
-			fmt.Sscanf(partsA[i], "%d", &partA)
+			partA = parseVersionPart(partsA[i])
 		}
 		if i < len(partsB) {
-			fmt.Sscanf(partsB[i], "%d", &partB)
+			partB = parseVersionPart(partsB[i])
 		}
 		if partA > partB {
 			return 1
@@ -104,4 +104,12 @@ func compareVersions(a, b string) int {
 		}
 	}
 	return 0
+}
+
+func parseVersionPart(s string) int {
+	var n int
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		return 0
+	}
+	return n
 }
