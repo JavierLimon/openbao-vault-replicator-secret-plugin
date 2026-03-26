@@ -187,7 +187,7 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 	if len(orgs) > 0 {
 		allOrgs = orgs
 	} else {
-		allOrgs, err = ListOrganizationsWithRetry(ctx, vaultClient, config.VaultMount, config.OrganizationPath)
+		allOrgs, err = ListOrganizationsWithRetry(ctx, vaultClient, config.VaultMount, "")
 		if err != nil {
 			status.Status = "failed"
 			status.LastError = err.Error()
@@ -198,13 +198,21 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 		}
 	}
 
+	var filteredOrgs []string
+	for _, org := range allOrgs {
+		if config.ShouldSyncOrg(org) {
+			filteredOrgs = append(filteredOrgs, org)
+		}
+	}
+	allOrgs = filteredOrgs
+
 	status.TotalOrgs = len(allOrgs)
 	status.LastOrg = ""
 
 	for _, org := range allOrgs {
 		status.LastOrg = org
 
-		secrets, err := ListSecretsInOrgWithRetry(ctx, vaultClient, config.VaultMount, config.OrganizationPath, org)
+		secrets, err := ListSecretsInOrgWithRetry(ctx, vaultClient, config.VaultMount, "", org)
 		if err != nil {
 			status.Failed++
 			continue
@@ -213,14 +221,18 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 		status.TotalSecrets += len(secrets)
 
 		for _, secret := range secrets {
-			secretData, err := ReadSecretWithRetry(ctx, vaultClient, config.VaultMount, config.OrganizationPath, org, secret)
+			secretData, err := ReadSecretWithMetadata(ctx, vaultClient, config.VaultMount, "", org, secret)
 			if err != nil {
+				status.Failed++
+				continue
+			}
+			if secretData == nil {
 				status.Failed++
 				continue
 			}
 
 			if !dryRun {
-				if err := b.writeToLocalKV(org, secret, secretData); err != nil {
+				if err := b.writeToLocalKVWithMetadata(org, secret, secretData.Data, secretData.CustomMetadata); err != nil {
 					status.Failed++
 					status.LastError = fmt.Sprintf("failed to write %s/%s: %v", org, secret, err)
 					continue

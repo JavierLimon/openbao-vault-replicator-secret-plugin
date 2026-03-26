@@ -13,13 +13,41 @@ const (
 )
 
 type Configuration struct {
-	VaultAddress     string `json:"vault_address"`
-	VaultMount       string `json:"vault_mount"`
-	AppRoleRoleID    string `json:"approle_role_id"`
-	AppRoleSecretID  string `json:"approle_secret_id"`
-	DestinationToken string `json:"destination_token"`
-	DestinationMount string `json:"destination_mount"`
-	OrganizationPath string `json:"organization_path"`
+	VaultAddress         string          `json:"vault_address"`
+	VaultMount           string          `json:"vault_mount"`
+	AppRoleRoleID        string          `json:"approle_role_id"`
+	AppRoleSecretID      string          `json:"approle_secret_id"`
+	DestinationToken     string          `json:"destination_token"`
+	DestinationMount     string          `json:"destination_mount"`
+	OrgSkipList          []string        `json:"org_skip_list"`
+	AllowDeletionSync    bool            `json:"allow_deletion_sync"`
+	OrgDeletionOverrides map[string]bool `json:"org_deletion_overrides"`
+}
+
+// ShouldSyncOrg returns true if the organization should be synced
+func (c *Configuration) ShouldSyncOrg(org string) bool {
+	if c == nil {
+		return true
+	}
+	for _, skipOrg := range c.OrgSkipList {
+		if skipOrg == org {
+			return false
+		}
+	}
+	return true
+}
+
+// ShouldAllowDeletionSync returns true if deletion sync is allowed for the organization
+func (c *Configuration) ShouldAllowDeletionSync(org string) bool {
+	if c == nil {
+		return false
+	}
+	// Check for org-specific override
+	if override, exists := c.OrgDeletionOverrides[org]; exists {
+		return override
+	}
+	// Fall back to global setting
+	return c.AllowDeletionSync
 }
 
 func (b *Backend) pathConfig() *framework.Path {
@@ -72,9 +100,17 @@ func (b *Backend) pathConfig() *framework.Path {
 				Type:        framework.TypeString,
 				Description: "OpenBao KVv2 mount (default: kv2)",
 			},
-			"organization_path": {
-				Type:        framework.TypeString,
-				Description: "Path in Vault where orgs live (e.g., data/)",
+			"org_skip_list": {
+				Type:        framework.TypeStringSlice,
+				Description: "Organizations to skip during sync (blacklist)",
+			},
+			"allow_deletion_sync": {
+				Type:        framework.TypeBool,
+				Description: "Allow deletion sync (delete secrets in destination when deleted in source)",
+			},
+			"org_deletion_overrides": {
+				Type:        framework.TypeMap,
+				Description: "Per-organization deletion sync overrides (e.g., {\"org-1\": false})",
 			},
 		},
 		HelpSynopsis:    "Configuration endpoint for Vault Replicator plugin",
@@ -96,13 +132,15 @@ func (b *Backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 
 	return &logical.Response{
 		Data: map[string]interface{}{
-			"vault_address":     config.VaultAddress,
-			"vault_mount":       config.VaultMount,
-			"approle_role_id":   config.AppRoleRoleID,
-			"approle_secret_id": config.AppRoleSecretID,
-			"destination_token": config.DestinationToken,
-			"destination_mount": config.DestinationMount,
-			"organization_path": config.OrganizationPath,
+			"vault_address":          config.VaultAddress,
+			"vault_mount":            config.VaultMount,
+			"approle_role_id":        config.AppRoleRoleID,
+			"approle_secret_id":      config.AppRoleSecretID,
+			"destination_token":      config.DestinationToken,
+			"destination_mount":      config.DestinationMount,
+			"org_skip_list":          config.OrgSkipList,
+			"allow_deletion_sync":    config.AllowDeletionSync,
+			"org_deletion_overrides": config.OrgDeletionOverrides,
 		},
 	}, nil
 }
@@ -132,19 +170,38 @@ func (b *Backend) pathConfigWrite(ctx context.Context, req *logical.Request, dat
 	if !ok {
 		return logical.ErrorResponse("destination_mount must be a string"), logical.ErrInvalidRequest
 	}
-	organizationPath, ok := data.Get("organization_path").(string)
+
+	orgSkipList, ok := data.Get("org_skip_list").([]string)
 	if !ok {
-		return logical.ErrorResponse("organization_path must be a string"), logical.ErrInvalidRequest
+		orgSkipList = []string{}
+	}
+
+	allowDeletionSync, ok := data.Get("allow_deletion_sync").(bool)
+	if !ok {
+		allowDeletionSync = false
+	}
+
+	orgDeletionOverridesRaw, ok := data.Get("org_deletion_overrides").(map[string]interface{})
+	if !ok {
+		orgDeletionOverridesRaw = map[string]interface{}{}
+	}
+	orgDeletionOverrides := make(map[string]bool)
+	for k, v := range orgDeletionOverridesRaw {
+		if boolVal, ok := v.(bool); ok {
+			orgDeletionOverrides[k] = boolVal
+		}
 	}
 
 	config := &Configuration{
-		VaultAddress:     vaultAddress,
-		VaultMount:       vaultMount,
-		AppRoleRoleID:    approleRoleID,
-		AppRoleSecretID:  approleSecretID,
-		DestinationToken: destinationToken,
-		DestinationMount: destinationMount,
-		OrganizationPath: organizationPath,
+		VaultAddress:         vaultAddress,
+		VaultMount:           vaultMount,
+		AppRoleRoleID:        approleRoleID,
+		AppRoleSecretID:      approleSecretID,
+		DestinationToken:     destinationToken,
+		DestinationMount:     destinationMount,
+		OrgSkipList:          orgSkipList,
+		AllowDeletionSync:    allowDeletionSync,
+		OrgDeletionOverrides: orgDeletionOverrides,
 	}
 
 	if err := ValidateConfig(config); err != nil {

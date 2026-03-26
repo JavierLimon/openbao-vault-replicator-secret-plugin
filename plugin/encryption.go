@@ -124,7 +124,6 @@ type SecureConfig struct {
 	AppRoleSecretID  string `json:"approle_secret_id"`
 	DestinationToken string `json:"destination_token"`
 	DestinationMount string `json:"destination_mount"`
-	OrganizationPath string `json:"organization_path"`
 }
 
 func (b *Backend) encryptConfig(ctx context.Context, config *Configuration) (*SecureConfig, error) {
@@ -152,7 +151,6 @@ func (b *Backend) encryptConfig(ctx context.Context, config *Configuration) (*Se
 		AppRoleSecretID:  encryptedSecretID,
 		DestinationToken: encryptedToken,
 		DestinationMount: config.DestinationMount,
-		OrganizationPath: config.OrganizationPath,
 	}, nil
 }
 
@@ -181,7 +179,6 @@ func (b *Backend) decryptConfig(ctx context.Context, secureConfig *SecureConfig)
 		AppRoleSecretID:  decryptedSecretID,
 		DestinationToken: decryptedToken,
 		DestinationMount: secureConfig.DestinationMount,
-		OrganizationPath: secureConfig.OrganizationPath,
 	}, nil
 }
 

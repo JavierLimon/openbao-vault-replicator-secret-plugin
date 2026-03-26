@@ -21,6 +21,10 @@ func (b *Backend) getOpenBaoClient(token string) *api.Client {
 }
 
 func (b *Backend) writeToLocalKV(org, secretName string, data map[string]interface{}) error {
+	return b.writeToLocalKVWithMetadata(org, secretName, data, nil)
+}
+
+func (b *Backend) writeToLocalKVWithMetadata(org, secretName string, data map[string]interface{}, customMetadata map[string]interface{}) error {
 	ctx := context.Background()
 	config, err := b.readConfig(ctx, b.storage)
 	if err != nil {
@@ -40,17 +44,21 @@ func (b *Backend) writeToLocalKV(org, secretName string, data map[string]interfa
 		mount = "kv2"
 	}
 
-	// Trim trailing slash from org to prevent double slashes
 	org = strings.TrimSuffix(org, "/")
-	// Also clean up any double slashes in the path
 	org = strings.ReplaceAll(org, "//", "/")
 
 	path := fmt.Sprintf("%s/data/%s/%s", mount, org, secretName)
 	b.logger.Info("Writing secret", "path", path)
 
-	resp, err := client.Logical().Write(path, map[string]interface{}{
+	writeData := map[string]interface{}{
 		"data": data,
-	})
+	}
+
+	if customMetadata != nil && len(customMetadata) > 0 {
+		writeData["custom_metadata"] = customMetadata
+	}
+
+	resp, err := client.Logical().Write(path, writeData)
 	if err != nil {
 		return fmt.Errorf("failed to write secret at %s: %w", path, err)
 	}

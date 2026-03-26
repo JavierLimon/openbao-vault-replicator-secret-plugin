@@ -165,11 +165,6 @@ func ValidateConfig(config *Configuration) error {
 		return err
 	}
 
-	// Validate organization path
-	if strings.TrimSpace(config.OrganizationPath) == "" {
-		return fmt.Errorf("organization_path is required")
-	}
-
 	return nil
 }
 
@@ -414,6 +409,68 @@ func readSecretInternal(client *api.Client, mount, orgPath, org, secret string) 
 	}
 
 	return data, nil
+}
+
+type SecretData struct {
+	Data           map[string]interface{} `json:"data"`
+	CustomMetadata map[string]interface{} `json:"custom_metadata,omitempty"`
+	Version        int                    `json:"version"`
+}
+
+func ReadSecretWithMetadata(ctx context.Context, client *api.Client, mount, orgPath, org, secret string) (*SecretData, error) {
+	var result *SecretData
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), func() error {
+		data, err := readSecretWithMetadataInternal(client, mount, orgPath, org, secret)
+		if err != nil {
+			return err
+		}
+		result = data
+		return nil
+	})
+	return result, err
+}
+
+func readSecretWithMetadataInternal(client *api.Client, mount, orgPath, org, secret string) (*SecretData, error) {
+	org = strings.TrimSuffix(org, "/")
+	org = strings.ReplaceAll(org, "//", "/")
+
+	dataPath := fmt.Sprintf("%s/data/%s/%s", mount, org, secret)
+	dataResp, err := client.Logical().Read(dataPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read secret %s/%s: %w", org, secret, err)
+	}
+	if dataResp == nil || dataResp.Data == nil {
+		return nil, nil
+	}
+
+	dataRaw, ok := dataResp.Data["data"]
+	if !ok {
+		return nil, nil
+	}
+	data, ok := dataRaw.(map[string]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	version := 1
+	if v, ok := dataResp.Data["version"].(float64); ok {
+		version = int(v)
+	}
+
+	metadataPath := fmt.Sprintf("%s/metadata/%s/%s", mount, org, secret)
+	metadataResp, err := client.Logical().Read(metadataPath)
+	customMetadata := make(map[string]interface{})
+	if err == nil && metadataResp != nil && metadataResp.Data != nil {
+		if cm, ok := metadataResp.Data["custom_metadata"].(map[string]interface{}); ok {
+			customMetadata = cm
+		}
+	}
+
+	return &SecretData{
+		Data:           data,
+		CustomMetadata: customMetadata,
+		Version:        version,
+	}, nil
 }
 
 const (
