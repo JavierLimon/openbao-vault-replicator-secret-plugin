@@ -64,7 +64,7 @@ func RetryWithBackoff(ctx context.Context, config *RetryConfig, operation Retrya
 		// Check context cancellation
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("operation cancelled: %w", ctx.Err())
+			return fmt.Errorf("operation canceled: %w", ctx.Err())
 		default:
 		}
 
@@ -76,7 +76,7 @@ func RetryWithBackoff(ctx context.Context, config *RetryConfig, operation Retrya
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("operation cancelled during backoff: %w", ctx.Err())
+			return fmt.Errorf("operation canceled during backoff: %w", ctx.Err())
 		case <-time.After(nextBackOff):
 			// Continue to retry
 		}
@@ -277,7 +277,7 @@ func ListOrganizationsWithRetry(ctx context.Context, client *api.Client, mount, 
 func ListSecretsInOrgWithRetry(ctx context.Context, client *api.Client, mount, orgPath, org string) ([]string, error) {
 	var result []string
 	err := RetryWithBackoff(ctx, DefaultRetryConfig(), func() error {
-		secrets, err := listSecretsInOrgInternal(client, mount, orgPath, org)
+		secrets, err := listSecretsInOrgInternal(client, mount, org)
 		if err != nil {
 			return err
 		}
@@ -291,7 +291,7 @@ func ListSecretsInOrgWithRetry(ctx context.Context, client *api.Client, mount, o
 func ReadSecretWithRetry(ctx context.Context, client *api.Client, mount, orgPath, org, secret string) (map[string]interface{}, error) {
 	var result map[string]interface{}
 	err := RetryWithBackoff(ctx, DefaultRetryConfig(), func() error {
-		data, err := readSecretInternal(client, mount, orgPath, org, secret)
+		data, err := readSecretInternal(client, mount, org, secret)
 		if err != nil {
 			return err
 		}
@@ -339,7 +339,7 @@ func listOrganizationsInternal(client *api.Client, mount, orgPath string) ([]str
 }
 
 // listSecretsInOrgInternal lists secrets in an organization (internal implementation)
-func listSecretsInOrgInternal(client *api.Client, mount, orgPath, org string) ([]string, error) {
+func listSecretsInOrgInternal(client *api.Client, mount, org string) ([]string, error) {
 	org = strings.TrimSuffix(org, "/")
 	org = strings.ReplaceAll(org, "//", "/")
 	return listSecretsRecursive(client, mount, org)
@@ -386,7 +386,7 @@ func listSecretsRecursive(client *api.Client, mount, currentPath string) ([]stri
 }
 
 // readSecretInternal reads a secret (internal implementation)
-func readSecretInternal(client *api.Client, mount, orgPath, org, secret string) (map[string]interface{}, error) {
+func readSecretInternal(client *api.Client, mount, org, secret string) (map[string]interface{}, error) {
 	org = strings.TrimSuffix(org, "/")
 	org = strings.ReplaceAll(org, "//", "/")
 	path := fmt.Sprintf("%s/data/%s/%s", mount, org, secret)
@@ -420,7 +420,7 @@ type SecretData struct {
 func ReadSecretWithMetadata(ctx context.Context, client *api.Client, mount, orgPath, org, secret string) (*SecretData, error) {
 	var result *SecretData
 	err := RetryWithBackoff(ctx, DefaultRetryConfig(), func() error {
-		data, err := readSecretWithMetadataInternal(client, mount, orgPath, org, secret)
+		data, err := readSecretWithMetadataInternal(client, mount, org, secret)
 		if err != nil {
 			return err
 		}
@@ -430,7 +430,7 @@ func ReadSecretWithMetadata(ctx context.Context, client *api.Client, mount, orgP
 	return result, err
 }
 
-func readSecretWithMetadataInternal(client *api.Client, mount, orgPath, org, secret string) (*SecretData, error) {
+func readSecretWithMetadataInternal(client *api.Client, mount, org, secret string) (*SecretData, error) {
 	org = strings.TrimSuffix(org, "/")
 	org = strings.ReplaceAll(org, "//", "/")
 
@@ -561,11 +561,7 @@ func ListOrganizationsPaged(ctx context.Context, client *api.Client, mount, orgP
 	return allOrgs, nil
 }
 
-func ListSecretsInOrgPaged(ctx context.Context, client *api.Client, mount, orgPath, org string, opts *ListOptions) ([]string, error) {
-	if opts == nil {
-		opts = DefaultListOptions()
-	}
-
+func ListSecretsInOrgPaged(ctx context.Context, client *api.Client, mount, orgPath, org string) ([]string, error) {
 	var allSecrets []string
 
 	path := fmt.Sprintf("%s/metadata/%s%s", mount, orgPath, org)

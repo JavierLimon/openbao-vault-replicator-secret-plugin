@@ -20,10 +20,6 @@ func (b *Backend) getOpenBaoClient(token string) *api.Client {
 	return client
 }
 
-func (b *Backend) writeToLocalKV(org, secretName string, data map[string]interface{}) error {
-	return b.writeToLocalKVWithMetadata(org, secretName, data, nil)
-}
-
 func (b *Backend) writeToLocalKVWithMetadata(org, secretName string, data map[string]interface{}, customMetadata map[string]interface{}) error {
 	ctx := context.Background()
 	config, err := b.readConfig(ctx, b.storage)
@@ -66,9 +62,4 @@ func (b *Backend) writeToLocalKVWithMetadata(org, secretName string, data map[st
 	b.logger.Info("Secret written successfully", "response", resp)
 
 	return nil
-}
-
-func (b *Backend) readConfigNoLock() (*Configuration, error) {
-	ctx := context.Background()
-	return b.readConfig(ctx, b.storage)
 }

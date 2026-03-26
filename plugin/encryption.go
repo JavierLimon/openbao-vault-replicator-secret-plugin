@@ -126,7 +126,7 @@ type SecureConfig struct {
 	DestinationMount string `json:"destination_mount"`
 }
 
-func (b *Backend) encryptConfig(ctx context.Context, config *Configuration) (*SecureConfig, error) {
+func (b *Backend) encryptConfig(_ context.Context, config *Configuration) (*SecureConfig, error) {
 	encrypter := NewEncrypter(b)
 
 	encryptedRoleID, err := encrypter.Encrypt(config.AppRoleRoleID)
@@ -154,7 +154,7 @@ func (b *Backend) encryptConfig(ctx context.Context, config *Configuration) (*Se
 	}, nil
 }
 
-func (b *Backend) decryptConfig(ctx context.Context, secureConfig *SecureConfig) (*Configuration, error) {
+func (b *Backend) decryptConfig(_ context.Context, secureConfig *SecureConfig) (*Configuration, error) {
 	encrypter := NewEncrypter(b)
 
 	decryptedRoleID, err := encrypter.Decrypt(secureConfig.AppRoleRoleID)
@@ -194,21 +194,4 @@ func (b *Backend) writeEncryptedConfig(ctx context.Context, storage logical.Stor
 	}
 
 	return storage.Put(ctx, entry)
-}
-
-func (b *Backend) readEncryptedConfig(ctx context.Context, storage logical.Storage) (*Configuration, error) {
-	entry, err := storage.Get(ctx, configStoragePath)
-	if err != nil {
-		return nil, err
-	}
-	if entry == nil {
-		return nil, nil
-	}
-
-	var secureConfig SecureConfig
-	if err := entry.DecodeJSON(&secureConfig); err != nil {
-		return nil, err
-	}
-
-	return b.decryptConfig(ctx, &secureConfig)
 }

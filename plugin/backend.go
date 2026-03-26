@@ -37,6 +37,7 @@ func Factory(ctx context.Context, conf *logical.BackendConfig) (logical.Backend,
 			b.pathAuditLogs(),
 			b.pathHealth(),
 			b.pathMetrics(),
+			b.pathRoles(),
 		},
 		BackendType: logical.TypeLogical,
 	}

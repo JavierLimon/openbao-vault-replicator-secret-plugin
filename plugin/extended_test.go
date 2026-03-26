@@ -491,12 +491,10 @@ func TestSecretDataExtended(t *testing.T) {
 func TestSecretDataEmptyMetadata(t *testing.T) {
 	t.Parallel()
 
-	secret := &SecretData{
-		Data:    map[string]interface{}{"key": "value"},
-		Version: 1,
-	}
+	secret := &SecretData{}
 
 	assert.Empty(t, secret.CustomMetadata)
+	assert.Equal(t, 0, secret.Version)
 }
 
 func TestSyncStatusStorageExtended(t *testing.T) {
@@ -627,4 +625,40 @@ func TestPathSyncHistoryListExtended(t *testing.T) {
 	keys, ok := resp.Data["keys"].([]string)
 	require.True(t, ok)
 	assert.NotEmpty(t, keys)
+}
+
+func TestMetricIncrementors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	replicatorBackend.incrementTotalRequests()
+	replicatorBackend.incrementTotalErrors()
+	replicatorBackend.incrementSyncTotal()
+	replicatorBackend.incrementSyncCompleted()
+	replicatorBackend.incrementSyncFailed()
+	replicatorBackend.incrementSecretsReplicated(10)
+
+	resp, err := replicatorBackend.pathMetricsRead(ctx, &logical.Request{
+		Storage: storage,
+	}, &framework.FieldData{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, int64(1), resp.Data["total_requests"])
+	assert.Equal(t, int64(1), resp.Data["total_errors"])
+	assert.Equal(t, int64(1), resp.Data["sync_total"])
+	assert.Equal(t, int64(1), resp.Data["sync_completed"])
+	assert.Equal(t, int64(1), resp.Data["sync_failed"])
+	assert.Equal(t, int64(10), resp.Data["secrets_replicated"])
 }
