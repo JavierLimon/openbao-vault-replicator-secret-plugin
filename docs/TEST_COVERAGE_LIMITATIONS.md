@@ -4,9 +4,17 @@ This document describes the limitations in achieving high test coverage for the 
 
 ## Current Status
 
-- **Current Coverage**: ~44%
+- **Current Coverage**: 0% (no tests)
+- **Previous Coverage**: ~44% (tests were removed)
 - **Target Coverage**: 80%
-- **Gap**: 36%
+
+## History
+
+Tests previously existed in:
+- `plugin/backend_test.go` - 378 lines
+- `plugin/vault_client_test.go` - 288 lines
+
+These were removed in commit `b6cc33e` due to build failures. The tests need to be restored and fixed.
 
 ## Known Limitations
 

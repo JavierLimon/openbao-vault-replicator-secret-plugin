@@ -6,75 +6,43 @@ Current test coverage for the Vault Replicator plugin.
 
 | Package | Coverage | Target | Status |
 |---------|----------|--------|--------|
-| plugin | ~44% | 80% | ⚠️ BELOW TARGET |
+| plugin | 0% | 80% | ❌ NO TESTS |
 
-## Test Status
+## Status
 
-### Coverage by File
+**⚠️ Tests were removed** - The repository previously had unit tests but they were removed due to build failures. The test files were deleted in commit `b6cc33e`.
 
-| File | Coverage | Notes |
-|------|----------|-------|
-| backend.go | ~70% | Core factory tested |
-| path_config.go | ~77% | CRUD operations tested |
-| path_sync.go | ~50% | Some operations need mocking |
-| path_health.go | 100% | Fully tested |
-| path_metrics.go | ~40% | Basic structure tested |
-| vault_client.go | ~25% | Requires running Vault |
-| openbao_client.go | ~30% | Requires OpenBao |
-| audit.go | ~80% | Storage operations tested |
-| version.go | 100% | Fully tested |
+### What Was Tested Before
 
-### Working Tests
-
-- ✅ TestFactory (valid config)
-- ✅ TestBackend_Help
-- ✅ TestPathConfig_Read (exists/doesn't exist)
-- ✅ TestPathSyncStatus_Read
-- ✅ TestPathSyncHistory_List
-- ✅ TestPathSyncHistory_Read
-- ✅ TestPathAuditLogs_List
-- ✅ TestVaultClient_* (expected failures without Vault)
-- ✅ TestSyncStatus_JSON
-- ✅ TestConfiguration_JSON
-- ✅ TestVersion functions
-
-### Skipped/Unable to Test
-
-| Test | Reason |
-|------|--------|
-| VaultClient tests | Requires running Vault instance |
-| OpenBaoClient tests | Requires running OpenBao instance |
-| pathSyncSecrets | Complex replication logic needs integration test |
+| File | Coverage (when tests existed) |
+|------|-------------------------------|
+| backend.go | ~70% |
+| path_config.go | ~77% |
+| path_sync.go | ~50% |
+| path_health.go | 100% |
+| path_metrics.go | ~40% |
+| vault_client.go | ~25% |
+| openbao_client.go | ~30% |
+| audit.go | ~80% |
+| version.go | 100% |
 
 ---
 
 ## Running Tests
 
-### All Tests
 ```bash
 go test ./...
 go test -cover ./...
 ```
 
-### Specific Package
-```bash
-go test -cover -run "TestPathConfig" ./plugin/
-```
-
-### With Coverage Report
-```bash
-go test -coverprofile=coverage.out ./...
-go tool cover -func=coverage.out | grep -v "100.0%"
-```
-
 ---
 
-## Improving Coverage
+## Next Steps
 
-To reach 80% target:
+To restore and improve test coverage:
 
-1. **Create interfaces for clients** - Make VaultClient and OpenBaoClient testable via interfaces
-2. **Use test storage** - Mock logical.Storage for path tests
-3. **Add integration tests** - Run with actual Vault/OpenBao for E2E coverage
+1. **Restore deleted tests** - Restore `plugin/backend_test.go` and fix the issues
+2. **Create interfaces** - Make VaultClient and OpenBaoClient testable via interfaces
+3. **Add integration tests** - Use Docker to test with actual Vault/OpenBao instances
 
-See [TEST_COVERAGE_LIMITATIONS.md](./TEST_COVERAGE_LIMITATIONS.md) for details.
+See [TEST_COVERAGE_LIMITATIONS.md](./TEST_COVERAGE_LIMITATIONS.md) for details on what's needed.
