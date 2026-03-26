@@ -7,7 +7,6 @@ require (
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/openbao/openbao/api/v2 v2.5.1
 	github.com/openbao/openbao/sdk/v2 v2.5.1
-	github.com/stretchr/testify v1.11.1
 )
 
 require (
@@ -52,6 +51,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
