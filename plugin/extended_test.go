@@ -26,7 +26,8 @@ func TestPathHealthReadExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	resp, err := replicatorBackend.pathHealthRead(ctx, &logical.Request{
 		Storage: storage,
@@ -50,7 +51,8 @@ func TestPathMetricsReadExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	resp, err := replicatorBackend.pathMetricsRead(ctx, &logical.Request{
 		Storage: storage,
@@ -115,7 +117,8 @@ func TestAuditLoggerExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 	logger := NewAuditLogger(replicatorBackend)
 
 	err = logger.LogSyncStarted(ctx, storage, []string{"org-1", "org-2"}, "req-123")
@@ -138,7 +141,8 @@ func TestAuditLoggerEmptyOrgs(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 	logger := NewAuditLogger(replicatorBackend)
 
 	err = logger.LogSyncStarted(ctx, storage, []string{}, "req-123")
@@ -161,7 +165,8 @@ func TestAuditLoggerCompleted(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 	logger := NewAuditLogger(replicatorBackend)
 
 	err = logger.LogSyncCompleted(ctx, storage, "req-123", 5, 100, 5000)
@@ -184,7 +189,8 @@ func TestAuditLoggerFailed(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 	logger := NewAuditLogger(replicatorBackend)
 
 	err = logger.LogSyncFailed(ctx, storage, "req-123", fmt.Errorf("connection failed"))
@@ -207,7 +213,8 @@ func TestAuditLoggerListEmpty(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 	logger := NewAuditLogger(replicatorBackend)
 
 	keys, err := logger.ListAuditLogs(ctx, storage)
@@ -227,10 +234,12 @@ func TestPathAuditLogsListExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	logger := NewAuditLogger(replicatorBackend)
-	_ = logger.LogSyncStarted(ctx, storage, []string{"org-1"}, "req-1")
+	err = logger.LogSyncStarted(ctx, storage, []string{"org-1"}, "req-1")
+	require.NoError(t, err)
 
 	resp, err := replicatorBackend.pathAuditLogsList(ctx, &logical.Request{
 		Storage: storage,
@@ -255,7 +264,8 @@ func TestPathAuditLogReadExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	logger := NewAuditLogger(replicatorBackend)
 	err = logger.LogSyncStarted(ctx, storage, []string{"org-1"}, "req-123")
@@ -501,7 +511,8 @@ func TestSyncStatusStorageExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	status := &SyncStatus{
 		StartedAt:           time.Now().UTC(),
@@ -536,7 +547,8 @@ func TestSyncStatusStorageEmptyExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	readStatus, err := replicatorBackend.readSyncStatus(ctx, storage)
 	require.NoError(t, err)
@@ -555,7 +567,8 @@ func TestPathSyncStatusReadExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	status := &SyncStatus{
 		StartedAt:           time.Now().UTC(),
@@ -591,7 +604,8 @@ func TestPathSyncHistoryListExtended(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	status := &SyncStatus{
 		StartedAt:           time.Now().UTC(),

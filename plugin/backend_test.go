@@ -41,7 +41,8 @@ func TestPathConfig_Read(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	resp, err := replicatorBackend.pathConfigRead(ctx, &logical.Request{
 		Storage: storage,
@@ -62,7 +63,8 @@ func TestPathConfig_Write(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	data := &framework.FieldData{
 		Raw: map[string]interface{}{
@@ -97,7 +99,8 @@ func TestPathConfig_Delete(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	config := &Configuration{
 		VaultAddress:     "https://vault.example.com",
@@ -134,7 +137,8 @@ func TestReadConfig(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	config, err := replicatorBackend.readConfig(ctx, storage)
 	require.NoError(t, err)
@@ -153,7 +157,8 @@ func TestPathSync_Secrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	data := &framework.FieldData{
 		Raw: map[string]interface{}{
@@ -260,7 +265,8 @@ func TestSyncStatusStorage(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	status := &SyncStatus{
 		StartedAt:           time.Now().UTC(),
@@ -295,7 +301,8 @@ func TestSyncStatusStorageEmpty(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	readStatus, err := replicatorBackend.readSyncStatus(ctx, storage)
 	require.NoError(t, err)
@@ -314,7 +321,8 @@ func TestPathSyncStatusRead(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	status := &SyncStatus{
 		StartedAt:           time.Now().UTC(),
@@ -350,7 +358,8 @@ func TestPathSyncHistoryList(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	replicatorBackend := backend.(*Backend)
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
 
 	status := &SyncStatus{
 		StartedAt:           time.Now().UTC(),
