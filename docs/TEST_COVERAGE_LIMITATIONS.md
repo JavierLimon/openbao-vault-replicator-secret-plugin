@@ -4,17 +4,18 @@ This document describes the limitations in achieving high test coverage for the 
 
 ## Current Status
 
-- **Current Coverage**: 0% (no tests)
-- **Previous Coverage**: ~44% (tests were removed)
+- **Current Coverage**: 15.9%
 - **Target Coverage**: 80%
+- **Gap**: 64.1%
 
-## History
+## What's Tested
 
-Tests previously existed in:
-- `plugin/backend_test.go` - 378 lines
-- `plugin/vault_client_test.go` - 288 lines
-
-These were removed in commit `b6cc33e` due to build failures. The tests need to be restored and fixed.
+Current tests in `plugin/backend_test.go` and `plugin/vault_client_test.go`:
+- ✅ Backend Factory
+- ✅ Configuration CRUD (partial)
+- ✅ Sync status
+- ✅ Version functions
+- ✅ Configuration helpers (ShouldSyncOrg, ShouldAllowDeletionSync)
 
 ## Known Limitations
 
@@ -27,138 +28,54 @@ The plugin integrates with two external systems that are difficult to mock:
 | Vault Client | Uses `hashicorp/vault/api` - requires running Vault | ~20% coverage gap |
 | OpenBao Client | Uses OpenBao SDK - requires running OpenBao | ~10% coverage gap |
 
-**Why this matters:**
-- `vault_client.go` makes real HTTP calls to Vault
-- `openbao_client.go` uses OpenBao SDK client
-- Cannot mock at the HTTP layer without interfaces
+### 2. Sync Logic (pathSyncSecrets)
 
-**Solution:**
-```go
-// Create interfaces for testability
-type VaultClienter interface {
-    Login() error
-    ListOrganizations() ([]string, error)
-    ListSecretsInOrganization(org string) ([]string, error)
-    ReadSecret(org, secret string) (map[string]interface{}, error)
-}
-
-type OpenBaoWriter interface {
-    Write(path string, data map[string]interface{}) error
-    Read(path string) (map[string]interface{}, error)
-}
-```
-
-### 2. Framework FieldData Initialization
-
-The OpenBao SDK's `framework.FieldData` requires proper initialization:
-
-```go
-// This works in tests
-data := &framework.FieldData{
-    Raw: map[string]interface{}{
-        "field_name": "value",
-    },
-    Schema: fieldSchema,
-}
-
-// But many edge cases are hard to trigger
-data.Get("nonexistent") // Returns nil, not error
-```
-
-### 3. Storage Operations
-
-Some storage paths require specific state:
-- Sync status storage needs prior sync
-- Audit log storage needs audit events
-- History storage needs completed syncs
-
-### 4. Replication Logic
-
-The core `pathSyncSecrets` function:
+The core sync function:
 - Calls Vault API to list orgs
-- Calls Vault API to list secrets per org
+- Calls Vault API to list secrets per org  
 - Calls OpenBao API to write each secret
-- Complex error handling paths
-
-This requires integration testing with both Vault and OpenBao running.
+- Requires mocking both Vault and OpenBao clients
 
 ---
 
-## Unreachable Code Paths
+## Recommended Path to 80%
 
-### Functions with Low Coverage
+See [TEST_COVERAGE_PLAN.md](./TEST_COVERAGE_PLAN.md) for prioritized list from easy to hard.
 
-| Function | File | Coverage | Reason |
-|----------|------|----------|--------|
-| pathSyncSecrets | path_sync.go | 0% | Requires full replication |
-| createVaultClient | path_sync.go | 83% | Partial, needs auth |
-| loginToVault | path_sync.go | 40% | Needs running Vault |
-| listOrganizations | path_sync.go | 35% | Needs running Vault |
-| listSecretsInOrg | path_sync.go | 30% | Needs running Vault |
-| readSecret | path_sync.go | 37% | Needs running Vault |
+### Quick Wins (Easy)
 
-### Storage Error Paths
+1. **Health endpoint** - 3% coverage, no dependencies
+2. **Metrics endpoint** - 5% coverage  
+3. **Version functions** - 4% coverage
+4. **Config helpers** - 3% coverage
 
-These are hard to trigger without mocking storage:
-- Storage read failures
-- Storage write failures
-- JSON encoding/decoding errors
+### Medium Effort
+
+5. **Audit logger** - 10% coverage (needs storage mock)
+6. **Retry logic** - 15% coverage (some needs Vault mock)
+7. **Secret data** - 5% coverage
+
+### Hard (Needs Interfaces)
+
+8. **Sync logic** - 20% coverage
+9. **Backend factory** - 5% coverage  
+10. **OpenBao client** - 8% coverage
 
 ---
 
-## Recommendations for 80% Coverage
+## Prerequisites for Hard Tests
 
-### 1. Add Interfaces (High Impact)
-
-Create interfaces for external clients, enabling easy mocking:
+Before implementing Hard tests, create interfaces:
 
 ```go
 // plugin/interfaces.go
-type VaultClientInterface interface {
-    Login() error
-    ListOrganizations() ([]string, error)
-    ListSecretsInOrganization(org string) ([]string, error)
-    ReadSecret(org, secret string) (map[string]interface{}, error)
-}
-
-type OpenBaoClientInterface interface {
-    WriteSecret(mount, path string, data map[string]interface{}) error
-    ReadSecret(mount, path string) (map[string]interface{}, error)
-}
+type VaultClientInterface {...}
+type OpenBaoClientInterface {...}
 ```
 
-### 2. Use hashicorp/vault/sdk helper
-
-The Vault SDK provides `teststorage` for mocking:
-
-```go
-import "github.com/hashicorp/vault/sdk/helper/teststorage"
-```
-
-### 3. Integration Tests
-
-Create a separate test binary that runs against real instances:
-
+Or use integration tests with Docker:
 ```bash
-# Run integration tests
-RUN_INTEGRATION=true go test -tags=integration ./plugin/
-```
-
-### 4. Contract Testing
-
-Test the API contracts without full implementation:
-
-```go
-// Test that paths are registered correctly
-func TestPathRegistration(t *testing.T) {
-    b := &Backend{}
-    paths := b.paths()
-    
-    expectedPaths := []string{"config", "sync/secrets", "health", "metrics"}
-    for _, p := range expectedPaths {
-        // Verify path exists
-    }
-}
+RUN_INTEGRATION=true go test -tags=integration ./...
 ```
 
 ---
@@ -169,9 +86,3 @@ func TestPathRegistration(t *testing.T) {
 2. `plugin/mocks/` - Mock implementations
 3. `plugin/replicator_integration_test.go` - Integration tests
 4. `test/` - Docker-compose for local testing
-
----
-
-## Conclusion
-
-The 44% coverage is primarily due to external dependencies on Vault and OpenBao APIs. With interfaces and proper mocking infrastructure, coverage could potentially reach 80% for the business logic, but integration tests would still be needed for full E2E coverage.

@@ -3,6 +3,7 @@ package replicator
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/openbao/openbao/sdk/v2/framework"
@@ -245,4 +246,130 @@ func pathSyncSchema() map[string]*framework.FieldSchema {
 			Description: "Preview only",
 		},
 	}
+}
+
+func TestSyncStatusStorage(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend := backend.(*Backend)
+
+	status := &SyncStatus{
+		StartedAt:           time.Now().UTC(),
+		Status:              "completed",
+		OrganizationsSynced: 5,
+		SyncedSecrets:       100,
+		Failed:              0,
+		CompletedAt:         time.Now().UTC(),
+		DurationSeconds:     30,
+	}
+
+	err = replicatorBackend.saveSyncStatus(ctx, storage, status)
+	require.NoError(t, err)
+
+	readStatus, err := replicatorBackend.readSyncStatus(ctx, storage)
+	require.NoError(t, err)
+	require.NotNil(t, readStatus)
+	assert.Equal(t, "completed", readStatus.Status)
+	assert.Equal(t, 5, readStatus.OrganizationsSynced)
+	assert.Equal(t, 100, readStatus.SyncedSecrets)
+}
+
+func TestSyncStatusStorageEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend := backend.(*Backend)
+
+	readStatus, err := replicatorBackend.readSyncStatus(ctx, storage)
+	require.NoError(t, err)
+	assert.Nil(t, readStatus)
+}
+
+func TestPathSyncStatusRead(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend := backend.(*Backend)
+
+	status := &SyncStatus{
+		StartedAt:           time.Now().UTC(),
+		Status:              "completed",
+		OrganizationsSynced: 3,
+		SyncedSecrets:       50,
+		Failed:              1,
+		CompletedAt:         time.Now().UTC(),
+		DurationSeconds:     15,
+	}
+
+	err = replicatorBackend.saveSyncStatus(ctx, storage, status)
+	require.NoError(t, err)
+
+	resp, err := replicatorBackend.pathSyncStatusRead(ctx, &logical.Request{
+		Storage: storage,
+	}, &framework.FieldData{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, "completed", resp.Data["status"])
+}
+
+func TestPathSyncHistoryList(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend := backend.(*Backend)
+
+	status := &SyncStatus{
+		StartedAt:           time.Now().UTC(),
+		Status:              "completed",
+		OrganizationsSynced: 2,
+		SyncedSecrets:       20,
+		CompletedAt:         time.Now().UTC(),
+	}
+
+	err = replicatorBackend.saveSyncHistory(ctx, storage, status)
+	require.NoError(t, err)
+
+	resp, err := replicatorBackend.pathSyncHistoryList(ctx, &logical.Request{
+		Storage: storage,
+	}, &framework.FieldData{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	keys, ok := resp.Data["keys"].([]string)
+	require.True(t, ok)
+	assert.NotEmpty(t, keys)
 }
