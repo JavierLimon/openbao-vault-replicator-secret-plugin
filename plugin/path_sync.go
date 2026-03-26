@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hashicorp/vault/api"
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
 )
@@ -135,6 +134,11 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 		return logical.ErrorResponse("configuration not found"), logical.ErrInvalidRequest
 	}
 
+	// Validate configuration
+	if err := ValidateConfig(config); err != nil {
+		return logical.ErrorResponse("invalid configuration: " + err.Error()), logical.ErrInvalidRequest
+	}
+
 	orgsRaw, ok := data.Get("organizations").([]string)
 	if !ok {
 		return logical.ErrorResponse("organizations must be a string slice"), logical.ErrInvalidRequest
@@ -146,12 +150,12 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 	}
 	dryRun := dryRunRaw
 
-	vaultClient, err := b.createVaultClient(config)
+	vaultClient, err := NewVaultClient(config.VaultAddress, config.VaultMount, config.AppRoleRoleID, config.AppRoleSecretID)
 	if err != nil {
 		return logical.ErrorResponse("failed to create Vault client: " + err.Error()), logical.ErrInvalidRequest
 	}
 
-	clientToken, err := b.loginToVault(vaultClient, config)
+	clientToken, err := LoginToVault(vaultClient, config.AppRoleRoleID, config.AppRoleSecretID)
 	if err != nil {
 		return logical.ErrorResponse("failed to login to Vault: " + err.Error()), logical.ErrInvalidRequest
 	}
@@ -178,7 +182,7 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 	if len(orgs) > 0 {
 		allOrgs = orgs
 	} else {
-		allOrgs, err = b.listOrganizations(vaultClient, config)
+		allOrgs, err = ListOrganizationsWithRetry(ctx, vaultClient, config.VaultMount, config.OrganizationPath)
 		if err != nil {
 			status.Status = "failed"
 			status.LastError = err.Error()
@@ -195,7 +199,7 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 	for _, org := range allOrgs {
 		status.LastOrg = org
 
-		secrets, err := b.listSecretsInOrg(vaultClient, config, org)
+		secrets, err := ListSecretsInOrgWithRetry(ctx, vaultClient, config.VaultMount, config.OrganizationPath, org)
 		if err != nil {
 			status.Failed++
 			continue
@@ -204,7 +208,7 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 		status.TotalSecrets += len(secrets)
 
 		for _, secret := range secrets {
-			secretData, err := b.readSecret(vaultClient, config, org, secret)
+			secretData, err := ReadSecretWithRetry(ctx, vaultClient, config.VaultMount, config.OrganizationPath, org, secret)
 			if err != nil {
 				status.Failed++
 				continue
@@ -401,139 +405,6 @@ func (b *Backend) pathSyncHistoryTimestampRead(ctx context.Context, req *logical
 			"duration_seconds":     history.DurationSeconds,
 		},
 	}, nil
-}
-
-func (b *Backend) createVaultClient(config *Configuration) (*api.Client, error) {
-	vaultConfig := api.DefaultConfig()
-	vaultConfig.Address = config.VaultAddress
-
-	client, err := api.NewClient(vaultConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Vault client: %w", err)
-	}
-
-	return client, nil
-}
-
-func (b *Backend) loginToVault(client *api.Client, config *Configuration) (string, error) {
-	loginData := map[string]interface{}{
-		"role_id":   config.AppRoleRoleID,
-		"secret_id": config.AppRoleSecretID,
-	}
-
-	secret, err := client.Logical().Write("auth/approle/login", loginData)
-	if err != nil {
-		return "", fmt.Errorf("AppRole login failed: %w", err)
-	}
-
-	if secret == nil || secret.Data == nil {
-		return "", fmt.Errorf("invalid response from AppRole login")
-	}
-
-	clientToken, ok := secret.Data["client_token"].(string)
-	if !ok || clientToken == "" {
-		return "", fmt.Errorf("client_token not found in login response")
-	}
-
-	return clientToken, nil
-}
-
-func (b *Backend) listOrganizations(client *api.Client, config *Configuration) ([]string, error) {
-	mount := config.VaultMount
-	if mount == "" {
-		mount = "kv2"
-	}
-
-	path := fmt.Sprintf("%s/metadata/%s", mount, config.OrganizationPath)
-	secret, err := client.Logical().List(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list organizations at %s: %w", path, err)
-	}
-	if secret == nil {
-		return []string{}, nil
-	}
-
-	keysRaw, ok := secret.Data["keys"]
-	if !ok {
-		return []string{}, nil
-	}
-
-	keys, ok := keysRaw.([]interface{})
-	if !ok {
-		return []string{}, nil
-	}
-
-	var orgs []string
-	for _, k := range keys {
-		if keyStr, ok := k.(string); ok {
-			orgs = append(orgs, keyStr)
-		}
-	}
-
-	return orgs, nil
-}
-
-func (b *Backend) listSecretsInOrg(client *api.Client, config *Configuration, org string) ([]string, error) {
-	mount := config.VaultMount
-	if mount == "" {
-		mount = "kv2"
-	}
-
-	path := fmt.Sprintf("%s/metadata/%s%s", mount, config.OrganizationPath, org)
-	secret, err := client.Logical().List(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list secrets in org %s: %w", org, err)
-	}
-	if secret == nil {
-		return []string{}, nil
-	}
-
-	keysRaw, ok := secret.Data["keys"]
-	if !ok {
-		return []string{}, nil
-	}
-
-	keys, ok := keysRaw.([]interface{})
-	if !ok {
-		return []string{}, nil
-	}
-
-	var secrets []string
-	for _, k := range keys {
-		if keyStr, ok := k.(string); ok {
-			secrets = append(secrets, keyStr)
-		}
-	}
-
-	return secrets, nil
-}
-
-func (b *Backend) readSecret(client *api.Client, config *Configuration, org, secret string) (map[string]interface{}, error) {
-	mount := config.VaultMount
-	if mount == "" {
-		mount = "kv2"
-	}
-
-	path := fmt.Sprintf("%s/data/%s%s/%s", mount, config.OrganizationPath, org, secret)
-	secretData, err := client.Logical().Read(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read secret %s/%s: %w", org, secret, err)
-	}
-	if secretData == nil || secretData.Data == nil {
-		return nil, nil
-	}
-
-	dataRaw, ok := secretData.Data["data"]
-	if !ok {
-		return nil, nil
-	}
-
-	data, ok := dataRaw.(map[string]interface{})
-	if !ok {
-		return nil, nil
-	}
-
-	return data, nil
 }
 
 func (b *Backend) saveSyncStatus(ctx context.Context, storage logical.Storage, status *SyncStatus) error {

@@ -1,0 +1,508 @@
+package replicator
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	"github.com/hashicorp/vault/api"
+)
+
+// RetryConfig holds retry configuration
+type RetryConfig struct {
+	MaxRetries      int
+	InitialInterval time.Duration
+	MaxInterval     time.Duration
+	Multiplier      float64
+}
+
+// DefaultRetryConfig returns default retry configuration
+func DefaultRetryConfig() *RetryConfig {
+	return &RetryConfig{
+		MaxRetries:      3,
+		InitialInterval: 500 * time.Millisecond,
+		MaxInterval:     10 * time.Second,
+		Multiplier:      2.0,
+	}
+}
+
+// RetryableOperation defines an operation that can be retried
+type RetryableOperation func() error
+
+// RetryWithBackoff executes an operation with exponential backoff retry
+func RetryWithBackoff(ctx context.Context, config *RetryConfig, operation RetryableOperation) error {
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = config.InitialInterval
+	bo.MaxInterval = config.MaxInterval
+	bo.Multiplier = config.Multiplier
+	bo.MaxElapsedTime = 0 // No max time limit, use max retries
+
+	var lastError error
+	retryCount := 0
+
+	for {
+		err := operation()
+		if err == nil {
+			return nil
+		}
+
+		retryCount++
+		if retryCount > config.MaxRetries {
+			return fmt.Errorf("max retries (%d) exceeded, last error: %w", config.MaxRetries, lastError)
+		}
+
+		lastError = err
+
+		// Check if error is retryable
+		if !isRetryableError(err) {
+			return err
+		}
+
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("operation cancelled: %w", ctx.Err())
+		default:
+		}
+
+		// Wait before retry
+		nextBackOff := bo.NextBackOff()
+		if nextBackOff == backoff.Stop {
+			return fmt.Errorf("backoff stopped, last error: %w", lastError)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("operation cancelled during backoff: %w", ctx.Err())
+		case <-time.After(nextBackOff):
+			// Continue to retry
+		}
+	}
+}
+
+// isRetryableError determines if an error should trigger a retry
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Network-related errors are retryable
+	retryablePatterns := []string{
+		"connection refused",
+		"connection reset",
+		"connection timed out",
+		"timeout",
+		"no such host",
+		"network is unreachable",
+		"i/o timeout",
+		"temporary failure",
+		"server error",
+		"service unavailable",
+		"503",
+		"502",
+		"429", // rate limited
+	}
+
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ValidateConfig validates the plugin configuration
+func ValidateConfig(config *Configuration) error {
+	if config == nil {
+		return fmt.Errorf("configuration is nil")
+	}
+
+	// Validate Vault address
+	if strings.TrimSpace(config.VaultAddress) == "" {
+		return fmt.Errorf("vault_address is required")
+	}
+
+	if err := validateURL(config.VaultAddress, "vault_address"); err != nil {
+		return err
+	}
+
+	// Validate Vault mount
+	if strings.TrimSpace(config.VaultMount) == "" {
+		return fmt.Errorf("vault_mount is required")
+	}
+
+	if err := validateMountPath(config.VaultMount); err != nil {
+		return err
+	}
+
+	// Validate AppRole role_id
+	if strings.TrimSpace(config.AppRoleRoleID) == "" {
+		return fmt.Errorf("approle_role_id is required")
+	}
+
+	// Validate AppRole secret_id
+	if strings.TrimSpace(config.AppRoleSecretID) == "" {
+		return fmt.Errorf("approle_secret_id is required")
+	}
+
+	// Validate destination token
+	if strings.TrimSpace(config.DestinationToken) == "" {
+		return fmt.Errorf("destination_token is required")
+	}
+
+	// Validate destination mount
+	if strings.TrimSpace(config.DestinationMount) == "" {
+		return fmt.Errorf("destination_mount is required")
+	}
+
+	if err := validateMountPath(config.DestinationMount); err != nil {
+		return err
+	}
+
+	// Validate organization path
+	if strings.TrimSpace(config.OrganizationPath) == "" {
+		return fmt.Errorf("organization_path is required")
+	}
+
+	return nil
+}
+
+// validateURL validates that a string is a valid URL
+func validateURL(value, fieldName string) error {
+	u, err := url.Parse(value)
+	if err != nil {
+		return fmt.Errorf("%s is not a valid URL: %w", fieldName, err)
+	}
+
+	if u.Scheme == "" {
+		return fmt.Errorf("%s must include a scheme (http or https)", fieldName)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%s must use http or https scheme", fieldName)
+	}
+
+	if u.Host == "" {
+		return fmt.Errorf("%s must include a host", fieldName)
+	}
+
+	return nil
+}
+
+// validateMountPath validates a KV mount path
+func validateMountPath(path string) error {
+	// Mount paths should not contain leading slash for internal operations
+	path = strings.TrimPrefix(path, "/")
+
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("mount path must not contain '..'")
+	}
+
+	// Check for invalid characters
+	invalidChars := []string{" ", "\t", "\n", "\r", "\x00"}
+	for _, char := range invalidChars {
+		if strings.Contains(path, char) {
+			return fmt.Errorf("mount path contains invalid characters")
+		}
+	}
+
+	return nil
+}
+
+// NewVaultClient creates a new Vault client with AppRole authentication
+func NewVaultClient(addr, mount, roleID, secretID string) (*api.Client, error) {
+	config := api.DefaultConfig()
+	config.Address = addr
+
+	client, err := api.NewClient(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vault client: %w", err)
+	}
+
+	return client, nil
+}
+
+// LoginToVault performs AppRole login and returns the client token
+func LoginToVault(client *api.Client, roleID, secretID string) (string, error) {
+	resp, err := client.Logical().Write("auth/approle/login", map[string]interface{}{
+		"role_id":   roleID,
+		"secret_id": secretID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("approle login failed: %w", err)
+	}
+
+	if resp == nil {
+		return "", fmt.Errorf("approle login returned nil response")
+	}
+
+	tokenRaw, ok := resp.Data["token"]
+	if !ok {
+		return "", fmt.Errorf("token not found in approle login response")
+	}
+
+	token, ok := tokenRaw.(string)
+	if !ok {
+		return "", fmt.Errorf("token is not a string")
+	}
+
+	return token, nil
+}
+
+// ListOrganizationsWithRetry lists organizations with retry logic
+func ListOrganizationsWithRetry(ctx context.Context, client *api.Client, mount, orgPath string) ([]string, error) {
+	var result []string
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), func() error {
+		orgs, err := listOrganizationsInternal(client, mount, orgPath)
+		if err != nil {
+			return err
+		}
+		result = orgs
+		return nil
+	})
+	return result, err
+}
+
+// ListSecretsInOrgWithRetry lists secrets in an organization with retry logic
+func ListSecretsInOrgWithRetry(ctx context.Context, client *api.Client, mount, orgPath, org string) ([]string, error) {
+	var result []string
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), func() error {
+		secrets, err := listSecretsInOrgInternal(client, mount, orgPath, org)
+		if err != nil {
+			return err
+		}
+		result = secrets
+		return nil
+	})
+	return result, err
+}
+
+// ReadSecretWithRetry reads a secret with retry logic
+func ReadSecretWithRetry(ctx context.Context, client *api.Client, mount, orgPath, org, secret string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	err := RetryWithBackoff(ctx, DefaultRetryConfig(), func() error {
+		data, err := readSecretInternal(client, mount, orgPath, org, secret)
+		if err != nil {
+			return err
+		}
+		result = data
+		return nil
+	})
+	return result, err
+}
+
+// listOrganizationsInternal lists organizations (internal implementation)
+func listOrganizationsInternal(client *api.Client, mount, orgPath string) ([]string, error) {
+	path := fmt.Sprintf("%s/metadata/%s", mount, orgPath)
+	resp, err := client.Logical().List(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list organizations at %s: %w", path, err)
+	}
+	if resp == nil {
+		return []string{}, nil
+	}
+
+	keysRaw, ok := resp.Data["keys"]
+	if !ok {
+		return []string{}, nil
+	}
+
+	keys, ok := keysRaw.([]interface{})
+	if !ok {
+		return []string{}, nil
+	}
+
+	var orgs []string
+	for _, k := range keys {
+		if keyStr, ok := k.(string); ok {
+			orgs = append(orgs, keyStr)
+		}
+	}
+
+	return orgs, nil
+}
+
+// listSecretsInOrgInternal lists secrets in an organization (internal implementation)
+func listSecretsInOrgInternal(client *api.Client, mount, orgPath, org string) ([]string, error) {
+	path := fmt.Sprintf("%s/metadata/%s%s", mount, orgPath, org)
+	resp, err := client.Logical().List(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list secrets in org %s: %w", org, err)
+	}
+	if resp == nil {
+		return []string{}, nil
+	}
+
+	keysRaw, ok := resp.Data["keys"]
+	if !ok {
+		return []string{}, nil
+	}
+
+	keys, ok := keysRaw.([]interface{})
+	if !ok {
+		return []string{}, nil
+	}
+
+	var secrets []string
+	for _, k := range keys {
+		if keyStr, ok := k.(string); ok {
+			secrets = append(secrets, keyStr)
+		}
+	}
+
+	return secrets, nil
+}
+
+// readSecretInternal reads a secret (internal implementation)
+func readSecretInternal(client *api.Client, mount, orgPath, org, secret string) (map[string]interface{}, error) {
+	path := fmt.Sprintf("%s/data/%s%s/%s", mount, orgPath, org, secret)
+	resp, err := client.Logical().Read(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read secret %s/%s: %w", org, secret, err)
+	}
+	if resp == nil || resp.Data == nil {
+		return nil, nil
+	}
+
+	dataRaw, ok := resp.Data["data"]
+	if !ok {
+		return nil, nil
+	}
+
+	data, ok := dataRaw.(map[string]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	return data, nil
+}
+
+const (
+	defaultPageSize = 100
+	maxPageSize     = 500
+)
+
+type ListOptions struct {
+	PageSize int
+	Prefix   string
+}
+
+func DefaultListOptions() *ListOptions {
+	return &ListOptions{
+		PageSize: defaultPageSize,
+	}
+}
+
+func (opts *ListOptions) WithPageSize(pageSize int) *ListOptions {
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
+	}
+	if pageSize <= 0 {
+		pageSize = defaultPageSize
+	}
+	opts.PageSize = pageSize
+	return opts
+}
+
+func ListOrganizationsPaged(ctx context.Context, client *api.Client, mount, orgPath string, opts *ListOptions) ([]string, error) {
+	if opts == nil {
+		opts = DefaultListOptions()
+	}
+
+	var allOrgs []string
+	marker := ""
+
+	for {
+		select {
+		case <-ctx.Done():
+			return allOrgs, ctx.Err()
+		default:
+		}
+
+		path := fmt.Sprintf("%s/metadata/%s?list=true", mount, orgPath)
+		if marker != "" {
+			path += "&marker=" + marker
+		}
+		if opts.PageSize != defaultPageSize {
+			path += fmt.Sprintf("&limit=%d", opts.PageSize)
+		}
+
+		var resp *api.Secret
+		err := RetryWithBackoff(ctx, DefaultRetryConfig(), func() error {
+			var err error
+			resp, err = client.Logical().List(path)
+			return err
+		})
+		if err != nil {
+			return allOrgs, fmt.Errorf("failed to list organizations: %w", err)
+		}
+
+		if resp == nil {
+			break
+		}
+
+		keysRaw, ok := resp.Data["keys"]
+		if !ok {
+			break
+		}
+
+		keys, ok := keysRaw.([]interface{})
+		if !ok {
+			break
+		}
+
+		for _, k := range keys {
+			if keyStr, ok := k.(string); ok {
+				allOrgs = append(allOrgs, keyStr)
+			}
+		}
+
+		if len(keys) < opts.PageSize {
+			break
+		}
+	}
+
+	return allOrgs, nil
+}
+
+func ListSecretsInOrgPaged(ctx context.Context, client *api.Client, mount, orgPath, org string, opts *ListOptions) ([]string, error) {
+	if opts == nil {
+		opts = DefaultListOptions()
+	}
+
+	var allSecrets []string
+
+	path := fmt.Sprintf("%s/metadata/%s%s", mount, orgPath, org)
+	resp, err := client.Logical().List(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list secrets in org %s: %w", org, err)
+	}
+
+	if resp == nil {
+		return []string{}, nil
+	}
+
+	keysRaw, ok := resp.Data["keys"]
+	if !ok {
+		return []string{}, nil
+	}
+
+	keys, ok := keysRaw.([]interface{})
+	if !ok {
+		return []string{}, nil
+	}
+
+	for _, k := range keys {
+		if keyStr, ok := k.(string); ok {
+			allSecrets = append(allSecrets, keyStr)
+		}
+	}
+
+	return allSecrets, nil
+}

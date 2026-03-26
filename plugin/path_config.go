@@ -2,6 +2,7 @@ package replicator
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/openbao/openbao/sdk/v2/framework"
 	"github.com/openbao/openbao/sdk/v2/logical"
@@ -146,13 +147,12 @@ func (b *Backend) pathConfigWrite(ctx context.Context, req *logical.Request, dat
 		OrganizationPath: organizationPath,
 	}
 
-	entry, err := logical.StorageEntryJSON(configStoragePath, config)
-	if err != nil {
-		return nil, err
+	if err := ValidateConfig(config); err != nil {
+		return logical.ErrorResponse("invalid configuration: " + err.Error()), logical.ErrInvalidRequest
 	}
 
-	if err := req.Storage.Put(ctx, entry); err != nil {
-		return nil, err
+	if err := b.writeEncryptedConfig(ctx, req.Storage, config); err != nil {
+		return nil, fmt.Errorf("failed to store configuration: %w", err)
 	}
 
 	return nil, nil
@@ -174,10 +174,18 @@ func (b *Backend) readConfig(ctx context.Context, storage logical.Storage) (*Con
 		return nil, nil
 	}
 
-	var config Configuration
-	if err := entry.DecodeJSON(&config); err != nil {
+	var secureConfig SecureConfig
+	if err := entry.DecodeJSON(&secureConfig); err != nil {
 		return nil, err
 	}
 
-	return &config, nil
+	if secureConfig.AppRoleRoleID == "" && secureConfig.AppRoleSecretID == "" && secureConfig.DestinationToken == "" {
+		var config Configuration
+		if err := entry.DecodeJSON(&config); err != nil {
+			return nil, err
+		}
+		return &config, nil
+	}
+
+	return b.decryptConfig(ctx, &secureConfig)
 }

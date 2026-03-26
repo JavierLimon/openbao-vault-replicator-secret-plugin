@@ -3,6 +3,7 @@ module github.com/JavierLimon/openbao-vault-replicator-secret-plugin
 go 1.24.0
 
 require (
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/openbao/openbao/api/v2 v2.5.1
@@ -12,7 +13,6 @@ require (
 require (
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
