@@ -242,17 +242,26 @@ func LoginToVault(client *api.Client, roleID, secretID string) (string, error) {
 		return "", fmt.Errorf("approle login returned nil response")
 	}
 
-	tokenRaw, ok := resp.Data["token"]
-	if !ok {
-		return "", fmt.Errorf("token not found in approle login response")
+	// Try resp.Data["client_token"] first (standard Vault response)
+	if tokenRaw, ok := resp.Data["client_token"]; ok {
+		if token, ok := tokenRaw.(string); ok && token != "" {
+			return token, nil
+		}
 	}
 
-	token, ok := tokenRaw.(string)
-	if !ok {
-		return "", fmt.Errorf("token is not a string")
+	// Try resp.Data["token"] as fallback
+	if tokenRaw, ok := resp.Data["token"]; ok {
+		if token, ok := tokenRaw.(string); ok && token != "" {
+			return token, nil
+		}
 	}
 
-	return token, nil
+	// Try resp.Auth.ClientToken (for HashiCorp Vault responses wrapped in auth)
+	if resp.Auth != nil && resp.Auth.ClientToken != "" {
+		return resp.Auth.ClientToken, nil
+	}
+
+	return "", fmt.Errorf("token not found in approle login response - response: %+v", resp)
 }
 
 // ListOrganizationsWithRetry lists organizations with retry logic
@@ -299,6 +308,12 @@ func ReadSecretWithRetry(ctx context.Context, client *api.Client, mount, orgPath
 
 // listOrganizationsInternal lists organizations (internal implementation)
 func listOrganizationsInternal(client *api.Client, mount, orgPath string) ([]string, error) {
+	orgPath = strings.TrimSuffix(orgPath, "/")
+	if orgPath == "" || orgPath == "." {
+		orgPath = ""
+	} else {
+		orgPath = orgPath + "/"
+	}
 	path := fmt.Sprintf("%s/metadata/%s", mount, orgPath)
 	resp, err := client.Logical().List(path)
 	if err != nil {
@@ -330,7 +345,10 @@ func listOrganizationsInternal(client *api.Client, mount, orgPath string) ([]str
 
 // listSecretsInOrgInternal lists secrets in an organization (internal implementation)
 func listSecretsInOrgInternal(client *api.Client, mount, orgPath, org string) ([]string, error) {
-	path := fmt.Sprintf("%s/metadata/%s%s", mount, orgPath, org)
+	org = strings.TrimSuffix(org, "/")
+	org = strings.ReplaceAll(org, "//", "/")
+	// Secrets are at kv2/data/{org}/{secret}, so metadata is at kv2/metadata/{org}
+	path := fmt.Sprintf("%s/metadata/%s/", mount, org)
 	resp, err := client.Logical().List(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list secrets in org %s: %w", org, err)
@@ -361,7 +379,9 @@ func listSecretsInOrgInternal(client *api.Client, mount, orgPath, org string) ([
 
 // readSecretInternal reads a secret (internal implementation)
 func readSecretInternal(client *api.Client, mount, orgPath, org, secret string) (map[string]interface{}, error) {
-	path := fmt.Sprintf("%s/data/%s%s/%s", mount, orgPath, org, secret)
+	org = strings.TrimSuffix(org, "/")
+	org = strings.ReplaceAll(org, "//", "/")
+	path := fmt.Sprintf("%s/data/%s/%s", mount, org, secret)
 	resp, err := client.Logical().Read(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret %s/%s: %w", org, secret, err)

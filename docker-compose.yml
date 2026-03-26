@@ -1,0 +1,37 @@
+services:
+  vault:
+    image: hashicorp/vault:1.18.0
+    container_name: vault-source
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      VAULT_API_ADDR: http://vault:8200
+      VAULT_DEV_ROOT_TOKEN_ID: vault-token
+      VAULT_TOKEN: vault-token
+    ports:
+      - "8200:8200"
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - replicator-net
+
+  openbao:
+    image: openbao/openbao:2.5.1
+    container_name: openbao-dest
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+      BAO_API_ADDR: http://openbao:8200
+    ports:
+      - "8201:8200"
+    volumes:
+      - ./dist:/vault/plugins
+      - ./openbao.hcl:/openbao/config.hcl:ro
+      - ./openbao-data:/vault/data
+    command: ["server", "-config=/openbao/config.hcl"]
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - replicator-net
+
+networks:
+  replicator-net:
+    driver: bridge

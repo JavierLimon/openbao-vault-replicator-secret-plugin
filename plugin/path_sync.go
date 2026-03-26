@@ -50,6 +50,11 @@ func (b *Backend) pathSync() *framework.Path {
 				Description: "Triggers the replication of secrets from HashiCorp Vault to OpenBao",
 				Callback:    b.pathSyncSecrets,
 			},
+			logical.UpdateOperation: &framework.PathOperation{
+				Summary:     "Trigger secret replication",
+				Description: "Triggers the replication of secrets from HashiCorp Vault to OpenBao",
+				Callback:    b.pathSyncSecrets,
+			},
 		},
 		Fields: map[string]*framework.FieldSchema{
 			"organizations": {
