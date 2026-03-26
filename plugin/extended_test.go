@@ -105,6 +105,38 @@ func TestCompareVersionsExtended(t *testing.T) {
 	assert.Equal(t, -1, compareVersions("1.0.0", "2.0.0"))
 }
 
+func TestShortCommit(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "abc1234", shortCommit("abc1234"))
+	assert.Equal(t, "abc", shortCommit("abc"))
+	assert.Equal(t, "", shortCommit(""))
+	assert.Equal(t, "a", shortCommit("a"))
+	assert.Equal(t, "1234567", shortCommit("1234567890"))
+}
+
+func TestParseVersionPart(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected int
+	}{
+		{"valid number", "123", 123},
+		{"empty string", "", 0},
+		{"invalid number", "abc", 0},
+		{"negative number", "-5", -5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseVersionPart(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestAuditLoggerExtended(t *testing.T) {
 	t.Parallel()
 
@@ -661,4 +693,679 @@ func TestMetricIncrementors(t *testing.T) {
 	assert.Equal(t, int64(1), resp.Data["sync_completed"])
 	assert.Equal(t, int64(1), resp.Data["sync_failed"])
 	assert.Equal(t, int64(10), resp.Data["secrets_replicated"])
+}
+
+// Test Configuration helper functions
+
+func TestShouldSyncOrg(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		config   *Configuration
+		org      string
+		expected bool
+	}{
+		{
+			name:     "nil config returns true",
+			config:   nil,
+			org:      "org-1",
+			expected: true,
+		},
+		{
+			name:     "empty skip list returns true",
+			config:   &Configuration{},
+			org:      "org-1",
+			expected: true,
+		},
+		{
+			name:     "org in skip list returns false",
+			config:   &Configuration{OrgSkipList: []string{"org-1", "org-2"}},
+			org:      "org-1",
+			expected: false,
+		},
+		{
+			name:     "org not in skip list returns true",
+			config:   &Configuration{OrgSkipList: []string{"org-1", "org-2"}},
+			org:      "org-3",
+			expected: true,
+		},
+		{
+			name:     "single org skip list - match",
+			config:   &Configuration{OrgSkipList: []string{"skipped-org"}},
+			org:      "skipped-org",
+			expected: false,
+		},
+		{
+			name:     "single org skip list - no match",
+			config:   &Configuration{OrgSkipList: []string{"skipped-org"}},
+			org:      "other-org",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.config.ShouldSyncOrg(tt.org)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestShouldAllowDeletionSync(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		config   *Configuration
+		org      string
+		expected bool
+	}{
+		{
+			name:     "nil config returns false",
+			config:   nil,
+			org:      "org-1",
+			expected: false,
+		},
+		{
+			name:     "global disabled no override",
+			config:   &Configuration{AllowDeletionSync: false},
+			org:      "org-1",
+			expected: false,
+		},
+		{
+			name:     "global enabled no override",
+			config:   &Configuration{AllowDeletionSync: true},
+			org:      "org-1",
+			expected: true,
+		},
+		{
+			name:     "org override true",
+			config:   &Configuration{AllowDeletionSync: false, OrgDeletionOverrides: map[string]bool{"org-1": true}},
+			org:      "org-1",
+			expected: true,
+		},
+		{
+			name:     "org override false",
+			config:   &Configuration{AllowDeletionSync: true, OrgDeletionOverrides: map[string]bool{"org-1": false}},
+			org:      "org-1",
+			expected: false,
+		},
+		{
+			name:     "org override not set falls back to global true",
+			config:   &Configuration{AllowDeletionSync: true, OrgDeletionOverrides: map[string]bool{"other-org": false}},
+			org:      "org-1",
+			expected: true,
+		},
+		{
+			name:     "org override not set falls back to global false",
+			config:   &Configuration{AllowDeletionSync: false, OrgDeletionOverrides: map[string]bool{"other-org": true}},
+			org:      "org-1",
+			expected: false,
+		},
+		{
+			name:     "empty overrides falls back to global",
+			config:   &Configuration{AllowDeletionSync: true, OrgDeletionOverrides: map[string]bool{}},
+			org:      "org-1",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.config.ShouldAllowDeletionSync(tt.org)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test retry configuration helpers
+
+func TestDefaultRetryConfig(t *testing.T) {
+	t.Parallel()
+
+	config := DefaultRetryConfig()
+	require.NotNil(t, config)
+	assert.Equal(t, 3, config.MaxRetries)
+	assert.Equal(t, 500*time.Millisecond, config.InitialInterval)
+	assert.Equal(t, 10*time.Second, config.MaxInterval)
+	assert.Equal(t, 2.0, config.Multiplier)
+}
+
+func TestDefaultListOptions(t *testing.T) {
+	t.Parallel()
+
+	opts := DefaultListOptions()
+	require.NotNil(t, opts)
+	assert.Equal(t, 100, opts.PageSize)
+}
+
+func TestListOptionsWithPageSize(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		inputPageSize int
+		expectedSize  int
+	}{
+		{
+			name:          "valid size",
+			inputPageSize: 50,
+			expectedSize:  50,
+		},
+		{
+			name:          "zero size uses default",
+			inputPageSize: 0,
+			expectedSize:  100,
+		},
+		{
+			name:          "negative size uses default",
+			inputPageSize: -1,
+			expectedSize:  100,
+		},
+		{
+			name:          "exceeds max uses max",
+			inputPageSize: 10000,
+			expectedSize:  500,
+		},
+		{
+			name:          "max size exact",
+			inputPageSize: 500,
+			expectedSize:  500,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &ListOptions{}
+			result := opts.WithPageSize(tt.inputPageSize)
+			assert.Equal(t, tt.expectedSize, result.PageSize)
+		})
+	}
+}
+
+// Test sync history read endpoints
+
+func TestPathSyncHistoryRead(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	// First save a history entry
+	status := &SyncStatus{
+		StartedAt:           time.Now().UTC(),
+		Status:              "completed",
+		OrganizationsSynced: 2,
+		SyncedSecrets:       20,
+		CompletedAt:         time.Now().UTC(),
+	}
+
+	err = replicatorBackend.saveSyncHistory(ctx, storage, status)
+	require.NoError(t, err)
+
+	// List to get the key
+	respList, err := replicatorBackend.pathSyncHistoryList(ctx, &logical.Request{
+		Storage: storage,
+	}, &framework.FieldData{})
+	require.NoError(t, err)
+	require.NotNil(t, respList)
+
+	keys, ok := respList.Data["keys"].([]string)
+	require.True(t, ok)
+	require.NotEmpty(t, keys)
+
+	// Now read the specific history entry
+	data := &framework.FieldData{
+		Raw: map[string]interface{}{
+			"timestamp": keys[0],
+		},
+		Schema: map[string]*framework.FieldSchema{
+			"timestamp": {Type: framework.TypeString},
+		},
+	}
+
+	resp, err := replicatorBackend.pathSyncHistoryRead(ctx, &logical.Request{
+		Storage: storage,
+	}, data)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, "completed", resp.Data["status"])
+}
+
+func TestPathSyncHistoryTimestampRead(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	// First save a history entry
+	status := &SyncStatus{
+		StartedAt:           time.Now().UTC(),
+		Status:              "completed",
+		OrganizationsSynced: 3,
+		SyncedSecrets:       30,
+		CompletedAt:         time.Now().UTC(),
+	}
+
+	err = replicatorBackend.saveSyncHistory(ctx, storage, status)
+	require.NoError(t, err)
+
+	// List to get the key
+	respList, err := replicatorBackend.pathSyncHistoryList(ctx, &logical.Request{
+		Storage: storage,
+	}, &framework.FieldData{})
+	require.NoError(t, err)
+	require.NotNil(t, respList)
+
+	keys, ok := respList.Data["keys"].([]string)
+	require.True(t, ok)
+	require.NotEmpty(t, keys)
+
+	// Now read using timestamp endpoint
+	data := &framework.FieldData{
+		Raw: map[string]interface{}{
+			"timestamp": keys[0],
+		},
+		Schema: map[string]*framework.FieldSchema{
+			"timestamp": {Type: framework.TypeString},
+		},
+	}
+
+	resp, err := replicatorBackend.pathSyncHistoryTimestampRead(ctx, &logical.Request{
+		Storage: storage,
+	}, data)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, "completed", resp.Data["status"])
+	assert.Equal(t, 3, resp.Data["organizations_synced"])
+}
+
+// Test encryption Decrypt function
+
+func TestEncrypterDecrypt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	encrypter := NewEncrypter(replicatorBackend)
+
+	// First encrypt some data
+	originalText := "Hello, World!"
+	encrypted, err := encrypter.Encrypt(originalText)
+	require.NoError(t, err)
+
+	// Now decrypt it
+	decrypted, err := encrypter.Decrypt(encrypted)
+	require.NoError(t, err)
+	assert.Equal(t, originalText, decrypted)
+}
+
+func TestEncrypterDecryptEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	encrypter := NewEncrypter(replicatorBackend)
+
+	// Encrypt empty string
+	encrypted, err := encrypter.Encrypt("")
+	require.NoError(t, err)
+
+	decrypted, err := encrypter.Decrypt(encrypted)
+	require.NoError(t, err)
+	assert.Equal(t, "", decrypted)
+}
+
+func TestEncrypterDecryptInvalid(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	encrypter := NewEncrypter(replicatorBackend)
+
+	// Test invalid base64
+	_, err = encrypter.Decrypt("not-valid-base64!!!")
+	assert.Error(t, err)
+
+	// Test too short ciphertext
+	_, err = encrypter.Decrypt("YWJj") // "abc" in base64
+	assert.Error(t, err)
+}
+
+// Test decryptConfig function
+
+func TestDecryptConfig(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	// Create encrypter and encrypt config
+	encrypter := NewEncrypter(replicatorBackend)
+
+	// First encrypt the sensitive fields
+	roleID, err := encrypter.Encrypt("my-role-id")
+	require.NoError(t, err)
+	secretID, err := encrypter.Encrypt("my-secret-id")
+	require.NoError(t, err)
+	token, err := encrypter.Encrypt("my-token")
+	require.NoError(t, err)
+
+	// Create secure config
+	secureConfig := &SecureConfig{
+		VaultAddress:     "https://vault.example.com",
+		VaultMount:       "kv2",
+		AppRoleRoleID:    roleID,
+		AppRoleSecretID:  secretID,
+		DestinationToken: token,
+		DestinationMount: "kv2",
+	}
+
+	// Now decrypt
+	config, err := replicatorBackend.decryptConfig(ctx, secureConfig)
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://vault.example.com", config.VaultAddress)
+	assert.Equal(t, "kv2", config.VaultMount)
+	assert.Equal(t, "my-role-id", config.AppRoleRoleID)
+	assert.Equal(t, "my-secret-id", config.AppRoleSecretID)
+	assert.Equal(t, "my-token", config.DestinationToken)
+	assert.Equal(t, "kv2", config.DestinationMount)
+}
+
+func TestPathConfigWriteWithSkipList(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	data := &framework.FieldData{
+		Raw: map[string]interface{}{
+			"vault_address":          "https://vault.example.com",
+			"vault_mount":            "kv2",
+			"approle_role_id":        "role-id",
+			"approle_secret_id":      "secret-id",
+			"destination_token":      "dest-token",
+			"destination_mount":      "kv2",
+			"org_skip_list":          []string{"org-1", "org-2"},
+			"allow_deletion_sync":    true,
+			"org_deletion_overrides": map[string]interface{}{"org-3": false},
+		},
+		Schema: map[string]*framework.FieldSchema{
+			"vault_address":          {Type: framework.TypeString},
+			"vault_mount":            {Type: framework.TypeString},
+			"approle_role_id":        {Type: framework.TypeString},
+			"approle_secret_id":      {Type: framework.TypeString},
+			"destination_token":      {Type: framework.TypeString},
+			"destination_mount":      {Type: framework.TypeString},
+			"org_skip_list":          {Type: framework.TypeStringSlice},
+			"allow_deletion_sync":    {Type: framework.TypeBool},
+			"org_deletion_overrides": {Type: framework.TypeMap},
+		},
+	}
+
+	resp, err := replicatorBackend.pathConfigWrite(ctx, &logical.Request{
+		Storage: storage,
+	}, data)
+	require.NoError(t, err)
+	assert.Nil(t, resp)
+}
+
+func TestPathConfigDelete(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+
+	replicatorBackend, ok := backend.(*Backend)
+	require.True(t, ok)
+
+	data := &framework.FieldData{
+		Raw: map[string]interface{}{
+			"vault_address":          "https://vault.example.com",
+			"vault_mount":            "kv2",
+			"approle_role_id":        "role-id",
+			"approle_secret_id":      "secret-id",
+			"destination_token":      "dest-token",
+			"destination_mount":      "kv2",
+			"org_skip_list":          "",
+			"allow_deletion_sync":    false,
+			"org_deletion_overrides": map[string]interface{}{},
+		},
+		Schema: map[string]*framework.FieldSchema{
+			"vault_address":          {Type: framework.TypeString},
+			"vault_mount":            {Type: framework.TypeString},
+			"approle_role_id":        {Type: framework.TypeString},
+			"approle_secret_id":      {Type: framework.TypeString},
+			"destination_token":      {Type: framework.TypeString},
+			"destination_mount":      {Type: framework.TypeString},
+			"org_skip_list":          {Type: framework.TypeString},
+			"allow_deletion_sync":    {Type: framework.TypeBool},
+			"org_deletion_overrides": {Type: framework.TypeMap},
+		},
+	}
+
+	_, err = replicatorBackend.pathConfigWrite(ctx, &logical.Request{
+		Storage: storage,
+	}, data)
+	require.NoError(t, err)
+
+	resp, err := replicatorBackend.pathConfigDelete(ctx, &logical.Request{
+		Storage: storage,
+	}, &framework.FieldData{})
+	require.NoError(t, err)
+	assert.Nil(t, resp)
+
+	respRead, err := replicatorBackend.pathConfigRead(ctx, &logical.Request{
+		Storage: storage,
+	}, &framework.FieldData{})
+	require.NoError(t, err)
+	assert.Nil(t, respRead)
+}
+
+func TestRetryWithBackoffNonRetryableError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	config := &RetryConfig{
+		MaxRetries:      3,
+		InitialInterval: 10 * time.Millisecond,
+		MaxInterval:     50 * time.Millisecond,
+		Multiplier:      2.0,
+	}
+
+	callCount := 0
+	err := RetryWithBackoff(ctx, config, func() error {
+		callCount++
+		return fmt.Errorf("access denied")
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, 1, callCount)
+	assert.Contains(t, err.Error(), "access denied")
+}
+
+func TestRetryWithBackoffSuccess(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	config := &RetryConfig{
+		MaxRetries:      3,
+		InitialInterval: 10 * time.Millisecond,
+		MaxInterval:     50 * time.Millisecond,
+		Multiplier:      2.0,
+	}
+
+	callCount := 0
+	err := RetryWithBackoff(ctx, config, func() error {
+		callCount++
+		if callCount < 2 {
+			return fmt.Errorf("connection refused")
+		}
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, callCount)
+}
+
+func TestRetryWithBackoffContextCancel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	config := &RetryConfig{
+		MaxRetries:      10,
+		InitialInterval: 100 * time.Millisecond,
+		MaxInterval:     200 * time.Millisecond,
+		Multiplier:      2.0,
+	}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	err := RetryWithBackoff(ctx, config, func() error {
+		return fmt.Errorf("connection refused")
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "canceled")
+}
+
+func TestRetryWithBackoffMaxRetries(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	config := &RetryConfig{
+		MaxRetries:      2,
+		InitialInterval: 10 * time.Millisecond,
+		MaxInterval:     50 * time.Millisecond,
+		Multiplier:      2.0,
+	}
+
+	err := RetryWithBackoff(ctx, config, func() error {
+		return fmt.Errorf("connection refused")
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max retries")
+}
+
+func TestLoginToVaultInvalidCredentials(t *testing.T) {
+	t.Parallel()
+
+	client, err := NewVaultClient("https://127.0.0.1:1", "nonexistent-mount", "invalid-role", "invalid-secret")
+	require.NoError(t, err)
+	require.NotNil(t, client)
+
+	_, err = LoginToVault(client, "invalid-role", "invalid-secret")
+	require.Error(t, err)
+}
+
+func TestBackendFactory(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      hclog.NewNullLogger(),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, backend)
+
+	be, ok := backend.(*Backend)
+	require.True(t, ok)
+	assert.NotNil(t, be.Logger)
+}
+
+func TestBackendFactoryNilLogger(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage := &logical.InmemStorage{}
+
+	backend, err := Factory(ctx, &logical.BackendConfig{
+		StorageView: storage,
+		Logger:      nil,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, backend)
 }
