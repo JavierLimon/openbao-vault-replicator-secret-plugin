@@ -30,10 +30,21 @@ if [ "$INITIALIZED" = "false" ]; then
     echo "Initialized new OpenBao: $OPENBAO_TOKEN"
 else
     if [ "$SEALED" = "true" ]; then
-        curl -s -X POST "$OPENBAO_ADDR/v1/sys/unseal" -d '{"key": "e764bcd7ee9de19b74760ebb39ac94c702fd72c9a9155283a2c51e1006e7430a"}' > /dev/null
+        for key in $(docker logs openbao-dest 2>&1 | grep "Unseal Key:" | head -1 | sed 's/.*Unseal Key: //'); do
+            curl -s -X POST "$OPENBAO_ADDR/v1/sys/unseal" -d "{\"key\": \"$key\"}" > /dev/null 2>&1 || true
+        done
     fi
     OPENBAO_TOKEN="s.zr7Jf2ZqVZSb865HAPhlzd2"
-    echo "Using existing OpenBao token: $OPENBAO_TOKEN"
+    TEST_AUTH=$(curl -s -H "Authorization: Bearer $OPENBAO_TOKEN" "$OPENBAO_ADDR/v1/sys/health" | jq -r '.sealed // "true"')
+    if [ "$TEST_AUTH" = "true" ]; then
+        INIT_RESP=$(curl -s -X POST "$OPENBAO_ADDR/v1/sys/init" -d '{"secret_shares": 1, "secret_threshold": 1}')
+        OPENBAO_TOKEN=$(echo $INIT_RESP | jq -r '.root_token')
+        OPENBAO_KEY=$(echo $INIT_RESP | jq -r '.keys[0]')
+        curl -s -X POST "$OPENBAO_ADDR/v1/sys/unseal" -d "{\"key\": \"$OPENBAO_KEY\"}" > /dev/null
+        echo "Re-initialized OpenBao: $OPENBAO_TOKEN"
+    else
+        echo "Using existing OpenBao token: $OPENBAO_TOKEN"
+    fi
 fi
 
 echo ""

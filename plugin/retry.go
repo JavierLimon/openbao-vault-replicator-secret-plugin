@@ -347,11 +347,14 @@ func listOrganizationsInternal(client *api.Client, mount, orgPath string) ([]str
 func listSecretsInOrgInternal(client *api.Client, mount, orgPath, org string) ([]string, error) {
 	org = strings.TrimSuffix(org, "/")
 	org = strings.ReplaceAll(org, "//", "/")
-	// Secrets are at kv2/data/{org}/{secret}, so metadata is at kv2/metadata/{org}
-	path := fmt.Sprintf("%s/metadata/%s/", mount, org)
+	return listSecretsRecursive(client, mount, org)
+}
+
+func listSecretsRecursive(client *api.Client, mount, currentPath string) ([]string, error) {
+	path := fmt.Sprintf("%s/metadata/%s/", mount, currentPath)
 	resp, err := client.Logical().List(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list secrets in org %s: %w", org, err)
+		return nil, fmt.Errorf("failed to list secrets at %s: %w", currentPath, err)
 	}
 	if resp == nil {
 		return []string{}, nil
@@ -370,7 +373,17 @@ func listSecretsInOrgInternal(client *api.Client, mount, orgPath, org string) ([
 	var secrets []string
 	for _, k := range keys {
 		if keyStr, ok := k.(string); ok {
-			secrets = append(secrets, keyStr)
+			if strings.HasSuffix(keyStr, "/") {
+				folderName := strings.TrimSuffix(keyStr, "/")
+				subPath := currentPath + "/" + folderName
+				subSecrets, err := listSecretsRecursive(client, mount, subPath)
+				if err != nil {
+					return nil, err
+				}
+				secrets = append(secrets, subSecrets...)
+			} else {
+				secrets = append(secrets, keyStr)
+			}
 		}
 	}
 
