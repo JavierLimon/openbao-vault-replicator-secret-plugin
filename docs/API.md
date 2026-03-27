@@ -186,6 +186,7 @@ Trigger secret replication from HashiCorp Vault to OpenBao.
 |-------|------|----------|-------------|
 | `organizations` | array | No | Specific organizations to sync. If empty, syncs all organizations |
 | `dry_run` | bool | No | Preview only, do not write to destination |
+| `deletion_sync` | bool | No | Enable deletion sync (delete secrets in destination that don't exist in source). Requires `allow_deletion_sync=true` in config for each org |
 
 #### Request
 
@@ -220,6 +221,19 @@ curl -X POST http://127.0.0.1:8200/v1/replicator/sync/secrets \
   }'
 ```
 
+**Sync with deletion sync (delete orphans):**
+
+```bash
+curl -X POST http://127.0.0.1:8200/v1/replicator/sync/secrets \
+  -H "X-Vault-Token: ${VAULT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "deletion_sync": true
+  }'
+```
+
+**Safety:** Deletion sync will be skipped for an organization if Vault returned an error when listing secrets (e.g., network issues, timeouts). This prevents accidental deletion when Vault is unavailable.
+
 #### Response
 
 ```json
@@ -229,6 +243,7 @@ curl -X POST http://127.0.0.1:8200/v1/replicator/sync/secrets \
     "status": "completed",
     "organizations_synced": 1500,
     "secrets_synced": 5000,
+    "deleted_secrets": 10,
     "failed": 0,
     "completed_at": "2026-03-25T10:05:00Z",
     "duration_seconds": 300
@@ -242,6 +257,7 @@ curl -X POST http://127.0.0.1:8200/v1/replicator/sync/secrets \
 | `status` | string | Overall status: `completed`, `running`, or `failed` |
 | `organizations_synced` | int | Number of organizations successfully synced |
 | `secrets_synced` | int | Number of secrets successfully synced |
+| `deleted_secrets` | int | Number of secrets deleted in destination (when `allow_deletion_sync` is enabled) |
 | `failed` | int | Number of organizations/secrets that failed |
 | `completed_at` | string | RFC3339 timestamp when sync completed |
 | `duration_seconds` | int | Total sync duration in seconds |

@@ -375,7 +375,9 @@ func listSecretsRecursive(client *api.Client, mount, currentPath string) ([]stri
 				if err != nil {
 					return nil, err
 				}
-				secrets = append(secrets, subSecrets...)
+				for _, subSecret := range subSecrets {
+					secrets = append(secrets, folderName+"/"+subSecret)
+				}
 			} else {
 				secrets = append(secrets, keyStr)
 			}

@@ -43,7 +43,7 @@ bao write replicator/config \
     approle_secret_id="your-secret-id" \
     destination_token="your-openbao-token" \
     destination_mount="kv2" \
-    organization_path="data/"
+    organization_path=""
 ```
 
 ## Usage

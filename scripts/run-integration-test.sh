@@ -86,7 +86,7 @@ get_approle_credentials() {
     
     export VAULT_TOKEN
     
-    ROLE_ID=$(vault read -field=role_id auth/approle/role/replicator)
+    ROLE_ID=$(vault read -field=role_id auth/approle/role/replicator/role-id)
     SECRET_ID=$(vault write -field=secret_id -f auth/approle/role/replicator/secret-id)
     
     echo "ROLE_ID=$ROLE_ID"
@@ -103,7 +103,7 @@ configure_plugin() {
         approle_secret_id="$SECRET_ID" \
         destination_token="$OPENBAO_TOKEN" \
         destination_mount="$KV_MOUNT" \
-        organization_path="data/"
+        organization_path=""
     
     log_info "Plugin configured successfully"
 }

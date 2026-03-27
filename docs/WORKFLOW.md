@@ -121,7 +121,7 @@ This document describes the workflows for using the Vault Replicator plugin with
 │      vault_mount="kv2"                                             │
 │      approle_role_id="your-role-id"                                │
 │      approle_secret_id="your-secret-id"                            │
-│      organization_path="data/"                                     │
+│      organization_path=""                                        │
 │                    │                                                │
 │                    ▼                                                │
 │  ┌──────────────────────────────────────────┐                       │

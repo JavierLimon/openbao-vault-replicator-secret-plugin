@@ -4,18 +4,32 @@ This document describes the limitations in achieving high test coverage for the 
 
 ## Current Status
 
-- **Current Coverage**: 15.9%
+- **Current Coverage**: ~55%
 - **Target Coverage**: 80%
-- **Gap**: 64.1%
+- **Gap**: 25%
 
 ## What's Tested
 
-Current tests in `plugin/backend_test.go` and `plugin/vault_client_test.go`:
-- ✅ Backend Factory
-- ✅ Configuration CRUD (partial)
-- ✅ Sync status
-- ✅ Version functions
-- ✅ Configuration helpers (ShouldSyncOrg, ShouldAllowDeletionSync)
+Tests exist in:
+- `plugin/backend_test.go` - Core backend tests
+- `plugin/extended_test.go` - Extended integration-style tests
+- `plugin/vault_client_test.go` - Vault client tests
+
+### Coverage by File
+
+| File | Coverage | Notes |
+|------|----------|-------|
+| backend.go | ~80% | Factory |
+| path_config.go | ~85% | CRUD operations |
+| path_sync.go | ~35% | Sync logic (partial) |
+| path_health.go | 100% | Health endpoint |
+| path_metrics.go | ~40% | Metrics |
+| path_roles.go | 100% | Unsupported operations |
+| openbao_client.go | ~25% | Client functions |
+| audit.go | ~67% | Audit logging |
+| retry.go | ~30% | Retry logic (partial) |
+| version.go | 100% | Version functions |
+| encryption.go | N/A | REMOVED |
 
 ## Known Limitations
 
@@ -25,41 +39,61 @@ The plugin integrates with two external systems that are difficult to mock:
 
 | Component | Issue | Impact |
 |-----------|-------|--------|
-| Vault Client | Uses `hashicorp/vault/api` - requires running Vault | ~20% coverage gap |
+| Vault Client | Uses `hashicorp/vault/api` - requires running Vault | ~15% coverage gap |
 | OpenBao Client | Uses OpenBao SDK - requires running OpenBao | ~10% coverage gap |
 
 ### 2. Sync Logic (pathSyncSecrets)
 
 The core sync function:
 - Calls Vault API to list orgs
-- Calls Vault API to list secrets per org  
+- Calls Vault API to list secrets per org
 - Calls OpenBao API to write each secret
+- Calls OpenBao API to list/delete orphaned secrets
 - Requires mocking both Vault and OpenBao clients
+
+### 3. New Functions Added
+
+| Function | File | Issue |
+|----------|------|-------|
+| listSecretsInDestination | openbao_client.go | Requires OpenBao mock |
+| deleteSecretFromDestination | openbao_client.go | Requires OpenBao mock |
+| validateOrgName | retry.go | ✅ Fully testable |
+
+### 4. Removed Functions (Encryption)
+
+The encryption layer was removed - OpenBao storage handles encryption at rest:
+
+| Removed Function | File |
+|-----------------|------|
+| encryptConfig | encryption.go |
+| decryptConfig | encryption.go |
+| writeEncryptedConfig | encryption.go |
+| Encrypter | encryption.go |
+| SecureConfig | encryption.go |
 
 ---
 
 ## Recommended Path to 80%
 
-See [TEST_COVERAGE_PLAN.md](./TEST_COVERAGE_PLAN.md) for prioritized list from easy to hard.
+### Quick Wins (Easy - No Dependencies)
 
-### Quick Wins (Easy)
-
-1. **Health endpoint** - 3% coverage, no dependencies
-2. **Metrics endpoint** - 5% coverage  
-3. **Version functions** - 4% coverage
-4. **Config helpers** - 3% coverage
+1. **validateOrgName** - 100% ✅ Done
+2. **pathSyncSecrets validation** - ~10% → ~25%
+3. **LoginToVault error paths** - ~21% → ~40%
+4. **writeToLocalKVWithMetadata errors** - ~21% → ~40%
+5. **listSecretsInDestination** - 0% → ~30%
+6. **deleteSecretFromDestination** - 0% → ~30%
 
 ### Medium Effort
 
-5. **Audit logger** - 10% coverage (needs storage mock)
-6. **Retry logic** - 15% coverage (some needs Vault mock)
-7. **Secret data** - 5% coverage
+7. **pathSyncSecrets full flow** - needs mocks for Vault/OpenBao clients
+8. **saveSyncHistory storage errors**
+9. **readSyncStatus not found case**
 
-### Hard (Needs Interfaces)
+### Hard (Needs Interfaces or Integration Tests)
 
-8. **Sync logic** - 20% coverage
-9. **Backend factory** - 5% coverage  
-10. **OpenBao client** - 8% coverage
+10. **Vault API functions** - All require Vault mock
+11. **OpenBao client functions** - Require OpenBao mock
 
 ---
 

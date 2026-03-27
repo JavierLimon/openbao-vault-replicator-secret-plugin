@@ -6,43 +6,82 @@ Current test coverage for the Vault Replicator plugin.
 
 | Package | Coverage | Target | Status |
 |---------|----------|--------|--------|
-| plugin | 0% | 80% | ❌ NO TESTS |
+| plugin | ~55% | 80% | ⚠️ IN PROGRESS |
 
-## Status
+## Test Files
 
-**⚠️ Tests were removed** - The repository previously had unit tests but they were removed due to build failures. The test files were deleted in commit `b6cc33e`.
+| File | Coverage | Notes |
+|------|----------|-------|
+| backend_test.go | ~80% | Factory, config CRUD, sync status |
+| extended_test.go | ~60% | Extended tests, validation, helpers |
+| vault_client_test.go | ~25% | Vault client tests |
+| openbao_client.go | ~25% | OpenBao client tests |
 
-### What Was Tested Before
+## Files With Tests
 
-| File | Coverage (when tests existed) |
-|------|-------------------------------|
-| backend.go | ~70% |
-| path_config.go | ~77% |
-| path_sync.go | ~50% |
-| path_health.go | 100% |
-| path_metrics.go | ~40% |
-| vault_client.go | ~25% |
-| openbao_client.go | ~30% |
-| audit.go | ~80% |
-| version.go | 100% |
+| File | Functions Tested |
+|------|-----------------|
+| backend.go | Factory |
+| path_config.go | pathConfigRead, pathConfigWrite, pathConfigDelete, readConfig |
+| path_sync.go | pathSyncSecrets, pathSyncStatusRead, pathSyncHistory*, saveSyncStatus, saveSyncHistory |
+| path_health.go | pathHealthRead |
+| path_metrics.go | pathMetricsRead |
+| path_roles.go | pathRolesRead, pathRolesList |
+| openbao_client.go | getOpenBaoClient, writeToLocalKVWithMetadata |
+| audit.go | AuditLogger methods |
+| retry.go | LoginToVault, validateOrgName, RetryWithBackoff |
+| version.go | All version functions |
+
+## New Functions Added
+
+| Function | File | Coverage |
+|----------|------|----------|
+| validateOrgName | retry.go | ~100% |
+| listSecretsInDestination | openbao_client.go | 0% (needs tests) |
+| deleteSecretFromDestination | openbao_client.go | 0% (needs tests) |
+
+## Functions Removed (Encryption Layer)
+
+| Function | File | Reason |
+|----------|------|--------|
+| encryptConfig | encryption.go | Removed - OpenBao handles encryption |
+| decryptConfig | encryption.go | Removed - OpenBao handles encryption |
+| writeEncryptedConfig | encryption.go | Removed - OpenBao handles encryption |
+| Encrypter struct | encryption.go | Removed |
+| SecureConfig struct | encryption.go | Removed |
 
 ---
 
 ## Running Tests
 
 ```bash
+# Run all tests
 go test ./...
+
+# Run with coverage
 go test -cover ./...
+
+# Run with verbose output
+go test -v ./...
+
+# Generate HTML coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out -o coverage.html
 ```
 
 ---
 
-## Next Steps
+## Next Steps to Reach 80%
 
-To restore and improve test coverage:
+1. **Add tests for new functions**:
+   - listSecretsInDestination
+   - deleteSecretFromDestination
 
-1. **Restore deleted tests** - Restore `plugin/backend_test.go` and fix the issues
-2. **Create interfaces** - Make VaultClient and OpenBaoClient testable via interfaces
-3. **Add integration tests** - Use Docker to test with actual Vault/OpenBao instances
+2. **Improve coverage on existing functions**:
+   - pathSyncSecrets - validation errors
+   - LoginToVault - auth failure cases
+   - writeToLocalKVWithMetadata - error paths
 
-See [TEST_COVERAGE_LIMITATIONS.md](./TEST_COVERAGE_LIMITATIONS.md) for details on what's needed.
+3. **Add integration tests** for Vault/OpenBao client functions (requires mocking)
+
+See [TEST_COVERAGE_LIMITATIONS.md](./TEST_COVERAGE_LIMITATIONS.md) for full list.
