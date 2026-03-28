@@ -64,7 +64,9 @@ curl -X GET http://127.0.0.1:8200/v1/replicator/config \
     "approle_secret_id": "",
     "destination_token": "[MASKED]",
     "destination_mount": "kv2",
-    "organization_path": "data/"
+    "org_skip_list": [],
+    "allow_deletion_sync": false,
+    "org_deletion_overrides": {}
   }
 }
 ```
@@ -77,7 +79,9 @@ curl -X GET http://127.0.0.1:8200/v1/replicator/config \
 | `approle_secret_id` | string | Always empty string on read |
 | `destination_token` | string | Always `[MASKED]` on read |
 | `destination_mount` | string | OpenBao KVv2 destination mount |
-| `organization_path` | string | Organization base path in Vault |
+| `org_skip_list` | array | Organizations to skip during sync |
+| `allow_deletion_sync` | bool | Enable deletion sync |
+| `org_deletion_overrides` | object | Per-org deletion overrides |
 
 ---
 

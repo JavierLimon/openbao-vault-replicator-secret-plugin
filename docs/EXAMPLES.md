@@ -84,17 +84,27 @@ bao read replicator/config
 # last_updated            2026-03-25T18:00:00Z
 ```
 
-### Example 2: Configuration with Custom Organization Path
+### Example 2: Configuration with Deletion Sync
 
 ```bash
-# Some Vault deployments use custom paths for organizations
+# Enable deletion sync to delete secrets in destination when deleted in source
 bao write replicator/config \
     vault_address="https://vault.example.com:8200" \
     vault_mount="kv2" \
     approle_role_id="..." \
     approle_secret_id="..." \
-    organization_path="data/organizations/" \
-    destination_mount="kv2"
+    destination_mount="kv2" \
+    allow_deletion_sync=true
+
+# Or with per-org overrides (org-sensitive won't have deletions synced)
+bao write replicator/config \
+    vault_address="https://vault.example.com:8200" \
+    vault_mount="kv2" \
+    approle_role_id="..." \
+    approle_secret_id="..." \
+    destination_mount="kv2" \
+    allow_deletion_sync=true \
+    org_deletion_overrides='{"org-sensitive": false}'
 ```
 
 ### Example 3: Using TLS with Custom CA

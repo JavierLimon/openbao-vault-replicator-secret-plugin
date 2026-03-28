@@ -4,30 +4,34 @@ This directory contains scripts for running integration tests with real Vault an
 
 ## Prerequisites
 
-- Docker and Docker Compose
+- Podman (Docker replacement)
 - Built plugin (`make build`)
+- `podman` and `podman-compose` installed
 
 ## Quick Start
 
 ```bash
-# 1. Start containers
-docker-compose up -d
+# 1. Start containers using podman-compose
+podman-compose up -d
 
-# 2. Wait for services to be ready (check Docker Desktop is running)
+# 2. Wait for services to be ready (check podman is running)
 
 # 3. Populate Vault with test secrets
 ./scripts/populate-vault.sh
 
 # 4. Run integration test
 ./scripts/run-integration-test.sh
+
+# Or run comprehensive tests (100 orgs, deletion sync, etc.)
+./scripts/run-comprehensive-test.sh
 ```
 
 ## Scripts
 
-### docker-compose.yml
+### docker-compose.yml (used by podman-compose)
 Runs two containers:
-- **vault** (port 8200) - Source HashiCorp Vault
-- **openbao** (port 8201) - Destination OpenBao
+- **vault-source** (port 8200) - Source HashiCorp Vault
+- **openbao-dest** (port 8201) - Destination OpenBao
 
 ### populate-vault.sh
 Populates the source Vault with test secrets:
@@ -70,8 +74,8 @@ bao -address=$OPENBAO_ADDR -token=$OPENBAO_TOKEN kv list kv2/metadata/replicator
 ## Troubleshooting
 
 ### Services not starting
-- Ensure Docker Desktop is running
-- Check logs: `docker-compose logs vault` or `docker-compose logs openbao`
+- Ensure Podman is running
+- Check logs: `podman-compose logs vault-source` or `podman-compose logs openbao-dest`
 
 ### Cannot connect
 - Wait for services to be ready (they take a few seconds to start)
@@ -80,3 +84,4 @@ bao -address=$OPENBAO_ADDR -token=$OPENBAO_TOKEN kv list kv2/metadata/replicator
 ### Plugin registration fails
 - Ensure plugin is built: `make build`
 - Check the plugin binary exists: `ls -la dist/replicator`
+- If using podman, ensure you built for Linux: `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/replicator ./cmd/vault-replicator/`
