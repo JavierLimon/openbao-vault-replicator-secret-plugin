@@ -27,6 +27,7 @@ type SyncStatus struct {
 	SyncedOrgs          int       `json:"synced_organizations"`
 	TotalOrgs           int       `json:"total_organizations"`
 	Failed              int       `json:"failed"`
+	DeletedSecrets      int       `json:"deleted_secrets"`
 	OrganizationsSynced int       `json:"organizations_synced,omitempty"`
 	SecretsSynced       int       `json:"secrets_synced,omitempty"`
 	DurationSeconds     int       `json:"duration_seconds,omitempty"`
@@ -38,6 +39,7 @@ type SyncHistoryEntry struct {
 	OrganizationsSynced int       `json:"organizations_synced"`
 	SecretsSynced       int       `json:"secrets_synced"`
 	Failed              int       `json:"failed"`
+	DeletedSecrets      int       `json:"deleted_secrets,omitempty"`
 	DurationSeconds     int       `json:"duration_seconds"`
 }
 
@@ -243,6 +245,29 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 		}
 
 		status.SyncedOrgs++
+
+		if config.ShouldAllowDeletionSync(org) && !dryRun {
+			destSecrets, err := b.listSecretsInDestinationOrg(org)
+			if err != nil {
+				b.logger.Error("failed to list destination secrets", "org", org, "error", err)
+			} else {
+				for _, destSecret := range destSecrets {
+					secretData, err := ReadSecretWithRetry(ctx, vaultClient, config.VaultMount, "", org, destSecret)
+					if err != nil {
+						continue
+					}
+					if len(secretData) == 0 {
+						if err := b.deleteSecretFromDestination(org, destSecret); err != nil {
+							b.logger.Error("failed to delete secret", "org", org, "secret", destSecret, "error", err)
+						} else {
+							status.DeletedSecrets++
+							b.logger.Info("Deleted secret", "org", org, "secret", destSecret)
+						}
+					}
+				}
+			}
+		}
+
 		if err := b.saveSyncStatus(ctx, req.Storage, status); err != nil {
 			b.logger.Error("failed to save sync status", "error", err)
 		}
@@ -269,6 +294,7 @@ func (b *Backend) pathSyncSecrets(ctx context.Context, req *logical.Request, dat
 			"organizations_synced": status.OrganizationsSynced,
 			"secrets_synced":       status.SecretsSynced,
 			"failed":               status.Failed,
+			"deleted_secrets":      status.DeletedSecrets,
 			"completed_at":         status.CompletedAt.Format(time.RFC3339),
 			"duration_seconds":     status.DurationSeconds,
 		},
@@ -289,6 +315,7 @@ func (b *Backend) pathSyncStatusRead(ctx context.Context, req *logical.Request, 
 				"synced_organizations": 0,
 				"total_secrets":        0,
 				"synced_secrets":       0,
+				"deleted_secrets":      0,
 				"status":               "idle",
 				"last_error":           nil,
 			},
@@ -308,6 +335,7 @@ func (b *Backend) pathSyncStatusRead(ctx context.Context, req *logical.Request, 
 			"synced_organizations": status.SyncedOrgs,
 			"total_secrets":        status.TotalSecrets,
 			"synced_secrets":       status.SyncedSecrets,
+			"deleted_secrets":      status.DeletedSecrets,
 			"status":               status.Status,
 			"last_error":           status.LastError,
 		},
@@ -383,6 +411,7 @@ func (b *Backend) pathSyncHistoryRead(ctx context.Context, req *logical.Request,
 			"organizations_synced": history.OrganizationsSynced,
 			"secrets_synced":       history.SecretsSynced,
 			"failed":               history.Failed,
+			"deleted_secrets":      history.DeletedSecrets,
 			"duration_seconds":     history.DurationSeconds,
 		},
 	}, nil

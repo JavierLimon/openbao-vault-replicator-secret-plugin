@@ -118,12 +118,15 @@ func (e *Encrypter) getOrCreateKey() ([]byte, error) {
 }
 
 type SecureConfig struct {
-	VaultAddress     string `json:"vault_address"`
-	VaultMount       string `json:"vault_mount"`
-	AppRoleRoleID    string `json:"approle_role_id"`
-	AppRoleSecretID  string `json:"approle_secret_id"`
-	DestinationToken string `json:"destination_token"`
-	DestinationMount string `json:"destination_mount"`
+	VaultAddress         string          `json:"vault_address"`
+	VaultMount           string          `json:"vault_mount"`
+	AppRoleRoleID        string          `json:"approle_role_id"`
+	AppRoleSecretID      string          `json:"approle_secret_id"`
+	DestinationToken     string          `json:"destination_token"`
+	DestinationMount     string          `json:"destination_mount"`
+	AllowDeletionSync    bool            `json:"allow_deletion_sync"`
+	OrgSkipList          []string        `json:"org_skip_list"`
+	OrgDeletionOverrides map[string]bool `json:"org_deletion_overrides"`
 }
 
 func (b *Backend) encryptConfig(_ context.Context, config *Configuration) (*SecureConfig, error) {
@@ -145,12 +148,15 @@ func (b *Backend) encryptConfig(_ context.Context, config *Configuration) (*Secu
 	}
 
 	return &SecureConfig{
-		VaultAddress:     config.VaultAddress,
-		VaultMount:       config.VaultMount,
-		AppRoleRoleID:    encryptedRoleID,
-		AppRoleSecretID:  encryptedSecretID,
-		DestinationToken: encryptedToken,
-		DestinationMount: config.DestinationMount,
+		VaultAddress:         config.VaultAddress,
+		VaultMount:           config.VaultMount,
+		AppRoleRoleID:        encryptedRoleID,
+		AppRoleSecretID:      encryptedSecretID,
+		DestinationToken:     encryptedToken,
+		DestinationMount:     config.DestinationMount,
+		AllowDeletionSync:    config.AllowDeletionSync,
+		OrgSkipList:          config.OrgSkipList,
+		OrgDeletionOverrides: config.OrgDeletionOverrides,
 	}, nil
 }
 
@@ -173,12 +179,15 @@ func (b *Backend) decryptConfig(_ context.Context, secureConfig *SecureConfig) (
 	}
 
 	return &Configuration{
-		VaultAddress:     secureConfig.VaultAddress,
-		VaultMount:       secureConfig.VaultMount,
-		AppRoleRoleID:    decryptedRoleID,
-		AppRoleSecretID:  decryptedSecretID,
-		DestinationToken: decryptedToken,
-		DestinationMount: secureConfig.DestinationMount,
+		VaultAddress:         secureConfig.VaultAddress,
+		VaultMount:           secureConfig.VaultMount,
+		AppRoleRoleID:        decryptedRoleID,
+		AppRoleSecretID:      decryptedSecretID,
+		DestinationToken:     decryptedToken,
+		DestinationMount:     secureConfig.DestinationMount,
+		AllowDeletionSync:    secureConfig.AllowDeletionSync,
+		OrgSkipList:          secureConfig.OrgSkipList,
+		OrgDeletionOverrides: secureConfig.OrgDeletionOverrides,
 	}, nil
 }
 
